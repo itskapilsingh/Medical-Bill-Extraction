@@ -1,0 +1,10 @@
+.venv
+__pycache__
+*.py[oc]
+*.egg-info
+build/
+dist/
+wheels/
+.pytest_cache
+pdfs/*
+!pdfs/.gitkeep

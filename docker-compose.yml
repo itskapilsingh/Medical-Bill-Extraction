@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  api:
+    build: ./backend
+    command: ["scripts/migrate.sh", "python", "main.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      - ./backend/pdfs:/app/pdfs
+      - ./backend/scripts:/app/scripts
+    ports:
+      - "8000:8000"
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  worker:
+    build: ./backend
+    command: python worker.py
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      - ./backend/pdfs:/app/pdfs
+    restart: on-failure
+    deploy:
+      replicas: 2
+
+  # Add your Next.js + Better Auth frontend here and it will come up with the stack.
+  # It should build from ./frontend, serve on port 3000, and depend on postgres (and the
+  # api healthcheck if it calls the backend at startup). Example skeleton:
+  #
+  # web:
+  #   build: ./frontend
+  #   env_file: .env
+  #   depends_on:
+  #     api:
+  #       condition: service_healthy
+  #   ports:
+  #     - "3000:3000"
+  #   restart: on-failure
+
+volumes:
+  postgres_data:
