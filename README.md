@@ -107,12 +107,14 @@ PDF uploads use the `pdfs/` volume mounted at `/app/pdfs` inside the API and wor
 
    You should see structured `worker_started` logs and the polling loop, with no crash loop.
 
-Note (current state): M1 — authentication + the RLS isolation spine — is implemented. The
-`/jobs` routes are live and RLS-enforced (create/list/active/get/cancel); sign-up, sign-in,
-and the protected dashboard work end to end. The worker still claims/processes as a stub —
-the extraction agent and the worker's job loop land in M2 (the `echo` path under
-`backend/app/ai/` remains the wiring example). See `docs/design.md` for the topology and
-`AGENTS.md` for how to run and test.
+Note (current state): M1 (auth + RLS isolation spine) and M2 (extraction behind auth) are
+implemented. Sign-up, sign-in, and the protected dashboard work end to end; the `/jobs`
+routes are live and RLS-enforced; the two workers claim jobs safely (SECURITY DEFINER
+`claim_next_job()` with `FOR UPDATE SKIP LOCKED`), run the OpenAI extraction agent under the
+job owner's identity, and write results + metrics (token usage, cost, duration). M3
+(reliability: retries/backoff, crash recovery, content caching) and further M4 polish are
+the remaining stretch. See `docs/design.md` for the topology and `AGENTS.md` for how to run
+and test.
 
 ### Run the tests
 

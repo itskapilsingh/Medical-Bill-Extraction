@@ -27,7 +27,7 @@ backend/            # Python API + worker (FastAPI, SQLAlchemy async, Alembic)
     core/           # db provider, context manager (RLS identity), storage, identity
     dao/            # SQLAlchemy models + DAOs (all SQL lives here)
     service/        # business logic (job lifecycle, extraction)
-    ai/             # OpenAI Agents SDK pipeline (echo demo today; extraction in M2)
+    ai/             # OpenAI Agents SDK extraction pipeline (loader, tools, prompts, orchestrator)
     worker/         # background claim/process loop
   alembic/versions/ # migrations — the DB schema source of truth (incl. RLS + roles)
   tests/            # unit (no DB) + integration (DB-gated, skip without Postgres)
@@ -100,6 +100,7 @@ The frontend builds with `cd frontend && npm install && npm run build`.
 - The browser never calls the API directly (SameSite=Lax would drop the cookie cross-origin
   to :8000). It calls the same-origin BFF proxy at `/api/backend/*`, which forwards to the
   API with the session token as a Bearer credential.
-- The worker has no HTTP session: in M2 it claims a job, reads `owner_id`, and runs under
+- The worker has no HTTP session: it claims a job via the SECURITY DEFINER
+  `claim_next_job()` (the one audited cross-user read), then reads `owner_id` and runs under
   `acting_as(owner_id)` so its writes are RLS-scoped to that owner.
 - `gpt-5.4` family only for extraction (no `-pro` variants). Keep LLM calls modest.
