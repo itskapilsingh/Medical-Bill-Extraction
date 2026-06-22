@@ -32,6 +32,26 @@ class BaseServiceException(Exception):
         }
 
 
+class UnauthorizedException(BaseServiceException):
+    def __init__(self, reason: str = "Authentication required") -> None:
+        super().__init__(
+            message=reason,
+            error_code=4010,
+            http_status=HTTPStatus.UNAUTHORIZED,
+            details={},
+        )
+
+
+class InvalidUploadException(BaseServiceException):
+    def __init__(self, reason: str) -> None:
+        super().__init__(
+            message=reason,
+            error_code=4000,
+            http_status=HTTPStatus.BAD_REQUEST,
+            details={"reason": reason},
+        )
+
+
 class JobNotFoundException(BaseServiceException):
     def __init__(self, job_id: str) -> None:
         super().__init__(
