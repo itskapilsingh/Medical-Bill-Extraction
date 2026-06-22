@@ -74,7 +74,7 @@ docker compose up --build
 - The API runs `scripts/migrate.sh` then `python main.py`, so migrations apply before
   Uvicorn.
 - The worker waits until the API healthcheck passes (2 replicas by default).
-- The web service (Next.js), once you add it, serves the UI and Better Auth on port `3000`.
+- The web service (Next.js) serves the UI and Better Auth on port `3000`.
 
 PDF uploads use the `pdfs/` volume mounted at `/app/pdfs` inside the API and worker.
 
@@ -107,10 +107,26 @@ PDF uploads use the `pdfs/` volume mounted at `/app/pdfs` inside the API and wor
 
    You should see structured `worker_started` logs and the polling loop, with no crash loop.
 
-Note: the `/jobs` routes ship as stubs (`NotImplementedError`) until you implement
-`JobService` and `JobDAO`. The working AI demo today is the `echo` path (`EchoAgentExecutor`
-plus `ExtractionOrchestrator`), wired for local experimentation and not yet hooked to HTTP
-job processing.
+Note (current state): M1 — authentication + the RLS isolation spine — is implemented. The
+`/jobs` routes are live and RLS-enforced (create/list/active/get/cancel); sign-up, sign-in,
+and the protected dashboard work end to end. The worker still claims/processes as a stub —
+the extraction agent and the worker's job loop land in M2 (the `echo` path under
+`backend/app/ai/` remains the wiring example). See `docs/design.md` for the topology and
+`AGENTS.md` for how to run and test.
+
+### Run the tests
+
+```bash
+# Unit tests — no database needed:
+cd backend && uv run pytest tests/unit
+
+# Integration tests — RLS isolation + HTTP lifecycle against a migrated Postgres:
+docker compose up -d postgres api
+cd backend && \
+  POSTGRES_CONNECTION_STRING=postgresql+asyncpg://billing:billing@localhost:5432/billing \
+  APP_DB_CONNECTION_STRING=postgresql+asyncpg://billing_app:billing_app@localhost:5432/billing \
+  uv run pytest tests/integration
+```
 
 ## Tear down
 

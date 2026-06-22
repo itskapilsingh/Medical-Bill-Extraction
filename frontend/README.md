@@ -1,24 +1,40 @@
-# Frontend — your Next.js app
+# Frontend — Next.js + Better Auth
 
-**This directory is intentionally empty. Build your web frontend here.**
+The web client. Next.js (App Router) with Better Auth for email/password sign-up, sign-in,
+and sessions. A signed-in user uploads billing PDFs and reviews their own extracted records;
+isolation is enforced by the database's RLS, not the UI.
 
-Per [`../ASSIGNMENT.md`](../ASSIGNMENT.md), the platform's UI is a Next.js app with Better
-Auth for sign up, sign in, and sessions. A signed-in user uploads medical billing PDFs and
-views their own jobs and extracted results, scoped strictly to their account by the
-database's Row-Level Security policies.
+## How it fits together
 
-What we expect to find here when you submit:
+- **Auth** (`lib/auth.ts`, `app/api/auth/[...all]`): Better Auth owns sessions and writes the
+  `user`/`session`/`account`/`verification` tables over the admin `DATABASE_URL`. The session
+  cookie is httpOnly and stays on this origin.
+- **BFF proxy** (`app/api/backend/[...path]`): the browser only ever calls this same-origin
+  route. It validates the Better Auth session, then forwards the request to the FastAPI API
+  with the raw session token as `Authorization: Bearer …`. This sidesteps the SameSite=Lax
+  problem (the cookie would not cross-origin to the API on :8000) and keeps a clean trust
+  boundary — the API re-validates the token against the shared `session` table itself.
+- **Pages**: `app/login` (sign in / create account), `app/dashboard` (protected; upload +
+  job list with polling + result/flag display).
 
-- A Next.js application (App Router or Pages Router, your choice; justify it briefly in the
-  design doc).
-- Better Auth wired in, with auth tables migrated into Postgres.
-- Screens to sign up, sign in, upload a PDF, and list and view jobs and their results.
-- A `Dockerfile` for this service, wired into the repo-root `docker-compose.yml` so the
-  whole stack still comes up with a single `docker compose up`. Serve on port `3000`.
+## Run
 
-Relevant environment variables are in the repo-root `.env.example`: `BETTER_AUTH_SECRET`,
-`BETTER_AUTH_URL`, `NEXT_PUBLIC_API_BASE_URL`, and `DATABASE_URL`.
+Part of the stack — `docker compose up` from the repo root serves it on
+http://localhost:3000. Standalone:
 
-The bar for the frontend is working knowledge, not design mastery; see the *Frontend
-Expectations* section of the assignment. Feel free to use AI design tooling (for example
-Claude's `design` or `impeccable.style` skills) to help.
+```bash
+npm install
+npm run dev      # or: npm run build && npm start
+```
+
+Env (from the repo-root `.env`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
+`API_INTERNAL_URL` (point at `http://localhost:8000` when running outside Docker),
+`TRUSTED_ORIGINS`.
+
+## Stack notes
+
+- **App Router** for server components (session checks happen server-side before render) and
+  colocated route handlers (the auth handler and BFF proxy are just routes).
+- **Tailwind v4** with a small set of primitives in `app/globals.css` — clean and legible
+  over elaborate, per the brief.
+- **Standalone output** (`next.config.mjs`) so the Docker runtime image is small.
