@@ -61,6 +61,14 @@ class JobService(BaseService):
         """Return the caller's jobs currently being processed (live state)."""
         return await self.job_dao.get_active()
 
+    async def claim_next_job(self) -> dict | None:
+        """Claim the next pending job for a worker (no caller identity bound).
+
+        Returns the claimed job (incl. owner_id) or None if the queue is empty.
+        See JobDAO.claim_next_job for the concurrency/RLS mechanics.
+        """
+        return await self.job_dao.claim_next_job()
+
     async def cancel_job(self, job_id: str) -> dict:
         """Cancel a pending job the caller owns.
 

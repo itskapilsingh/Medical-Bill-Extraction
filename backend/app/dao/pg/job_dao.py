@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from app.core.common.time import utc_now
 from app.core.context_manager import ContextManager
@@ -102,10 +102,14 @@ class JobDAO(BasePgDAO[Job]):
         self,
         job_id: str,
         status: str,
+        *,
         result: dict | None = None,
         error: str | None = None,
+        token_usage: dict | None = None,
+        cost_usd: float | None = None,
+        processing_duration_seconds: float | None = None,
     ) -> dict | None:
-        """Update job status and optionally write result or error.
+        """Update job status and optionally write result/error/metrics.
 
         Returns the updated job as a dict, or None if no row was visible/updated
         (either the job does not exist or it belongs to another user — RLS makes
@@ -116,6 +120,12 @@ class JobDAO(BasePgDAO[Job]):
             values["result"] = result
         if error is not None:
             values["error"] = error
+        if token_usage is not None:
+            values["token_usage"] = token_usage
+        if cost_usd is not None:
+            values["cost_usd"] = cost_usd
+        if processing_duration_seconds is not None:
+            values["processing_duration_seconds"] = processing_duration_seconds
         if status == ACTIVE_STATUS:
             values["started_at"] = utc_now()
         if status in ("completed", "failed", "cancelled"):
@@ -172,11 +182,22 @@ class JobDAO(BasePgDAO[Job]):
     async def claim_next_job(self) -> dict | None:
         """Atomically claim the next pending job for processing.
 
-        Implemented in M2 via a SECURITY DEFINER function so the worker can pull
-        across all owners' pending jobs from the single queue without the app
-        role itself being able to read across users.
+        Delegates to the ``claim_next_job()`` SECURITY DEFINER function (see the
+        worker-queue migration). The function runs as the table owner, so it can
+        see pending jobs across ALL users — the one deliberate cross-user surface
+        — and uses ``FOR UPDATE SKIP LOCKED`` so two workers never grab the same
+        row. The app role itself still cannot read across users; it only receives
+        the single row the function chose to hand back, already flipped to
+        ``processing``.
+
+        Returns the claimed job (incl. owner_id, so the worker can then act under
+        that identity) or None if the queue is empty.
         """
-        raise NotImplementedError("Worker claiming is implemented in M2.")
+        async with self.context_manager.session() as session:
+            row = (
+                await session.execute(text("SELECT * FROM claim_next_job()"))
+            ).mappings().first()
+            return dict(row) if row is not None else None
 
     async def recover_stalled(self, timeout_minutes: int = 5) -> int:
         """Reset jobs stuck in processing back to pending (crash recovery, M3)."""
