@@ -4,11 +4,11 @@ from typing import Any
 from sqlalchemy import (
     DateTime,
     Float,
-    ForeignKey,
     Index,
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -42,10 +42,18 @@ class Job(TimestampBase):
         Index("idx_jobs_owner_hash", "owner_id", "content_hash"),
     )
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    owner_id: Mapped[str] = mapped_column(
-        ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    # The database generates the id (gen_random_uuid()::text, set in the initial
+    # migration). Declaring the server_default here tells SQLAlchemy to fetch the
+    # generated value back via RETURNING on INSERT.
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, server_default=text("gen_random_uuid()::text")
     )
+    # FK to "user"(id) is enforced in the database (see the jobs RLS migration).
+    # It is intentionally NOT declared as an ORM ForeignKey: the Better Auth
+    # tables are managed as raw-SQL migrations, not ORM models, so a string
+    # ForeignKey("user.id") could not be resolved against Base.metadata at flush
+    # time. Postgres still guarantees referential integrity and ON DELETE CASCADE.
+    owner_id: Mapped[str] = mapped_column(String, nullable=False)
     pdf_filename: Mapped[str] = mapped_column(String, nullable=False)
     pdf_path: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
