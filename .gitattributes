@@ -1,0 +1,20 @@
+# Normalize line endings to LF in the repo. The stack is built/run in Linux
+# containers; CRLF on shell scripts (e.g. scripts/migrate.sh) would break the
+# shebang and the container would fail to start.
+* text=auto eol=lf
+
+*.sh        text eol=lf
+*.py        text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+
+# Binary assets — never normalize.
+*.pdf       binary
+*.png       binary
+*.jpg       binary
+*.ico       binary

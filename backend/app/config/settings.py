@@ -1,4 +1,5 @@
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings
 
 
@@ -6,8 +7,24 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str
 
-    # Postgres
+    # Postgres — admin / migration role. Owns the schema; used ONLY by Alembic
+    # (see alembic/env.py). The application never connects with this.
     POSTGRES_CONNECTION_STRING: str
+
+    # Postgres — application role. RLS-ENFORCED, non-owner, no BYPASSRLS.
+    # Every API request and every worker job connects through this role, so a
+    # missing/forgotten WHERE clause cannot leak another user's rows: the
+    # database itself filters by current_setting('app.user_id').
+    APP_DB_CONNECTION_STRING: str
+
+    # Name of the Postgres session GUC that carries the authenticated user id
+    # into the database session. RLS policies read it via current_setting().
+    RLS_USER_ID_SETTING: str = "app.user_id"
+
+    # Auth (Better Auth, issued by the Next.js app). The API uses the shared
+    # session table to validate the presented token, and the secret to verify
+    # the signed cookie value before trusting it.
+    BETTER_AUTH_SECRET: str = "change_me_to_a_long_random_string"
 
     # App
     PDF_MOUNT_PATH: str = "/app/pdfs"
