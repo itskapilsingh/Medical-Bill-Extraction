@@ -104,3 +104,20 @@ class FlaggedRecord(BaseModel):
     severity: Severity = Field(
         description='Severity: "low", "medium", or "high" — see docs/domain.md flagging rules.',
     )
+
+
+class ExtractionOutput(BaseModel):
+    """The agent's final structured output for one document.
+
+    Persisted as the job's ``result`` JSON and surfaced (as ``records`` /
+    ``flagged``) by the API envelope described in ``docs/schema.md``.
+    """
+
+    records: list[BillingRecord] = Field(
+        default_factory=list,
+        description="One row per distinct provider/claim/fill episode.",
+    )
+    flagged: list[FlaggedRecord] = Field(
+        default_factory=list,
+        description="Records or issues that need manual review.",
+    )
