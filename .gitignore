@@ -10,6 +10,8 @@ data
 
 # Virtual environments
 .venv
+.venv-test
+venv/
 
 # Environment variables
 .env
