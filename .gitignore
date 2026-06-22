@@ -24,5 +24,13 @@ node_modules/
 out/
 *.tsbuildinfo
 
+# Logs
+.logs/
+*.log
+
+# Uploaded PDFs on the shared volume (runtime data, not source)
+backend/pdfs/*
+!backend/pdfs/.gitkeep
+
 # Packaged exports
 *.zip

@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     WORKER_POLL_INTERVAL_SECONDS: int = 5
 
+    # Echo every SQL statement (SQLAlchemy engine.echo). Off by default — it is
+    # very noisy; turn on only when debugging queries. Kept separate from
+    # ENVIRONMENT so dev logs stay readable.
+    DB_ECHO: bool = False
+
     model_config = {
         "env_file": ".env",
         "case_sensitive": True,
