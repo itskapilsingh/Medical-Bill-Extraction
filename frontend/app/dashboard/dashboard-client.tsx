@@ -11,7 +11,6 @@ import {
   FileText,
   Inbox,
   Loader,
-  Logo,
   LogOut,
   RefreshCw,
   UploadCloud,
@@ -137,14 +136,13 @@ export default function DashboardClient({
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
-          <div className="flex items-center gap-2.5">
-            <Logo className="h-8 w-8" />
-            <div className="leading-tight">
-              <div className="text-sm font-semibold text-slate-900">
-                Medical Billing Extraction
-              </div>
-              <div className="text-xs text-slate-400">Document workspace</div>
-            </div>
+          <div className="flex items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.png"
+              alt="Medical Bill Extraction"
+              className="h-9 w-auto"
+            />
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden items-center gap-2.5 sm:flex">

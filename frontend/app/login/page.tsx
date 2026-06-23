@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { signIn, signUp } from "@/lib/auth-client";
-import { Loader, Logo } from "@/components/icons";
+import { Loader } from "@/components/icons";
 
 type Mode = "signin" | "signup";
 
@@ -85,10 +85,12 @@ export default function LoginPage() {
       />
       <div className="w-full max-w-sm">
         <div className="mb-7 flex flex-col items-center text-center">
-          <Logo className="mb-4 h-12 w-12" />
-          <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-            Medical Billing Extraction
-          </h1>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="Medical Bill Extraction"
+            className="mb-3 h-14 w-auto"
+          />
           <p className="mt-1 text-sm text-slate-500">
             Upload billing PDFs and review extracted records — scoped to your account.
           </p>
