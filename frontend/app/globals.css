@@ -1,89 +1,60 @@
 @import "tailwindcss";
 
-@theme {
-  --color-canvas: #f6f7f9;
-  --color-surface: #ffffff;
-  --color-ink: #14181f;
-  --color-muted: #5b6573;
-  --color-line: #e3e7ec;
-  --color-brand: #1f5fb0;
-  --color-brand-ink: #16498a;
-}
-
 :root {
   color-scheme: light;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  background: var(--color-canvas);
-  color: var(--color-ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #f8fafc; /* slate-50 */
+  color: #0f172a; /* slate-900 */
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Small set of primitives so the markup stays legible. */
-.card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-line);
-  border-radius: 12px;
+::selection {
+  background: #e0e7ff; /* indigo-100 */
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 0.875rem;
-  padding: 0.55rem 0.9rem;
-  transition: background-color 0.15s ease, opacity 0.15s ease;
-  cursor: pointer;
+/* Thin scrollbars for dense data tables. */
+.scrollbar-thin::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
 }
-
-.btn-primary {
-  background: var(--color-brand);
-  color: white;
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #cbd5e1; /* slate-300 */
+  border-radius: 9999px;
 }
-.btn-primary:hover {
-  background: var(--color-brand-ink);
-}
-.btn-primary:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.btn-ghost {
+.scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
-  color: var(--color-muted);
-  border: 1px solid var(--color-line);
-}
-.btn-ghost:hover {
-  color: var(--color-ink);
 }
 
-.input {
-  width: 100%;
-  border: 1px solid var(--color-line);
-  border-radius: 8px;
-  padding: 0.55rem 0.7rem;
-  font-size: 0.9rem;
-  background: var(--color-surface);
+/* Loading skeleton shimmer. */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
-.input:focus {
-  outline: 2px solid color-mix(in srgb, var(--color-brand) 35%, transparent);
-  border-color: var(--color-brand);
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: #e2e8f0; /* slate-200 */
 }
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 0.2rem 0.55rem;
-  border-radius: 999px;
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.6) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: shimmer 1.5s infinite;
 }

@@ -3,19 +3,32 @@
 import { useState } from "react";
 
 import type { BillingRecord, FlaggedRecord, Job, JobStatus } from "@/lib/types";
+import {
+  AlertTriangle,
+  Bolt,
+  CheckCircle,
+  ChevronDown,
+  Clock,
+  Coins,
+  Loader,
+  XCircle,
+} from "@/components/icons";
 
-const STATUS_STYLES: Record<JobStatus, string> = {
-  pending: "bg-slate-100 text-slate-700",
-  processing: "bg-blue-100 text-blue-700 animate-pulse",
-  completed: "bg-green-100 text-green-700",
-  failed: "bg-red-100 text-red-700",
-  cancelled: "bg-zinc-100 text-zinc-600",
+const STATUS: Record<
+  JobStatus,
+  { label: string; cls: string; Icon: (p: { className?: string }) => React.ReactElement }
+> = {
+  completed: { label: "Completed", cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", Icon: CheckCircle },
+  processing: { label: "Processing", cls: "bg-blue-50 text-blue-700 ring-blue-200", Icon: Loader },
+  pending: { label: "Pending", cls: "bg-slate-100 text-slate-600 ring-slate-200", Icon: Clock },
+  failed: { label: "Failed", cls: "bg-red-50 text-red-700 ring-red-200", Icon: XCircle },
+  cancelled: { label: "Cancelled", cls: "bg-zinc-100 text-zinc-500 ring-zinc-200", Icon: XCircle },
 };
 
-const SEVERITY_STYLES: Record<FlaggedRecord["severity"], string> = {
-  low: "bg-amber-50 text-amber-700 border-amber-200",
-  medium: "bg-orange-50 text-orange-700 border-orange-200",
-  high: "bg-red-50 text-red-700 border-red-200",
+const SEVERITY: Record<FlaggedRecord["severity"], string> = {
+  low: "border-amber-200 bg-amber-50 text-amber-800",
+  medium: "border-orange-200 bg-orange-50 text-orange-800",
+  high: "border-red-200 bg-red-50 text-red-800",
 };
 
 function money(value: number | null): string {
@@ -27,16 +40,33 @@ function sum(records: BillingRecord[], key: keyof BillingRecord): number | null 
   const vals = records
     .map((r) => r[key])
     .filter((v): v is number => typeof v === "number");
-  if (vals.length === 0) return null;
-  return vals.reduce((a, b) => a + b, 0);
+  return vals.length === 0 ? null : vals.reduce((a, b) => a + b, 0);
 }
 
 function fileName(path: string): string {
   return path.split("/").pop() ?? path;
 }
 
+function timeAgo(iso: string): string {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 function StatusBadge({ status }: { status: JobStatus }) {
-  return <span className={`badge ${STATUS_STYLES[status]}`}>{status}</span>;
+  const { label, cls, Icon } = STATUS[status];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${cls}`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </span>
+  );
 }
 
 export function JobCard({
@@ -48,54 +78,69 @@ export function JobCard({
 }) {
   const [open, setOpen] = useState(false);
   const hasResult = job.records.length > 0 || job.flagged.length > 0;
-  const cached =
-    job.status === "completed" && job.processing_duration_seconds === 0;
+  const cached = job.status === "completed" && job.processing_duration_seconds === 0;
 
   return (
-    <li className="card overflow-hidden">
+    <li className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
       <div className="flex items-center gap-3 px-4 py-3">
         <button
-          className="flex-1 flex items-center gap-3 text-left min-w-0"
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
           onClick={() => setOpen((v) => !v)}
         >
           <StatusBadge status={job.status} />
-          <span className="font-medium truncate">{fileName(job.pdf_path)}</span>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-slate-800">
+              {fileName(job.pdf_path)}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span>{timeAgo(job.created_at)}</span>
+              {job.records.length > 0 && (
+                <span>· {job.records.length} record{job.records.length === 1 ? "" : "s"}</span>
+              )}
+              {job.flagged.length > 0 && (
+                <span className="font-medium text-amber-600">
+                  · {job.flagged.length} flagged
+                </span>
+              )}
+            </div>
+          </div>
           {cached && (
-            <span className="badge bg-violet-100 text-violet-700" title="Reused a previous extraction of identical content">
+            <span
+              className="hidden rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700 sm:inline"
+              title="Reused a previous extraction of identical content"
+            >
               cached
-            </span>
-          )}
-          {job.records.length > 0 && (
-            <span className="text-xs text-[var(--color-muted)] shrink-0">
-              {job.records.length} record{job.records.length === 1 ? "" : "s"}
-            </span>
-          )}
-          {job.flagged.length > 0 && (
-            <span className="text-xs font-medium text-amber-700 shrink-0">
-              ⚠ {job.flagged.length} flagged
             </span>
           )}
         </button>
         {job.status === "pending" && (
-          <button className="btn btn-ghost" onClick={() => onCancel(job.job_id)}>
+          <button
+            onClick={() => onCancel(job.job_id)}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+          >
             Cancel
           </button>
         )}
-        <button className="btn btn-ghost" onClick={() => setOpen((v) => !v)}>
-          {open ? "Hide" : "View"}
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          aria-label={open ? "Collapse" : "Expand"}
+        >
+          <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
         </button>
       </div>
 
       {open && (
-        <div className="border-t border-[var(--color-line)] px-4 py-4 space-y-4">
+        <div className="space-y-4 border-t border-slate-100 bg-slate-50/50 px-4 py-4">
           {job.status === "failed" && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-              {job.error ?? "The worker failed to process this job."}
-            </p>
+            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{job.error ?? "The worker failed to process this job."}</span>
+            </div>
           )}
 
           {!hasResult && job.status !== "failed" && (
-            <p className="text-sm text-[var(--color-muted)]">
+            <p className="text-sm text-slate-500">
               {job.status === "completed"
                 ? "No records were extracted from this document."
                 : "Waiting for the worker to finish…"}
@@ -126,11 +171,13 @@ function FinancialSummary({ records }: { records: BillingRecord[] }) {
     ["Balance", sum(records, "balance")],
   ];
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
       {items.map(([label, value]) => (
-        <div key={label} className="rounded-lg bg-[var(--color-canvas)] px-3 py-2">
-          <div className="text-xs text-[var(--color-muted)]">{label}</div>
-          <div className="font-semibold tabular-nums">{money(value)}</div>
+        <div key={label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+          <div className="text-xs text-slate-500">{label}</div>
+          <div className="mt-0.5 font-semibold tabular-nums text-slate-900">
+            {money(value)}
+          </div>
         </div>
       ))}
     </div>
@@ -140,20 +187,18 @@ function FinancialSummary({ records }: { records: BillingRecord[] }) {
 function FlaggedList({ flagged }: { flagged: FlaggedRecord[] }) {
   return (
     <div>
-      <h4 className="text-sm font-semibold mb-2 text-amber-800">
-        ⚠ Flagged for review ({flagged.length})
+      <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-amber-800">
+        <AlertTriangle className="h-4 w-4" />
+        Flagged for review ({flagged.length})
       </h4>
       <ul className="space-y-2">
         {flagged.map((f, i) => (
-          <li
-            key={i}
-            className={`text-sm border rounded-md px-3 py-2 ${SEVERITY_STYLES[f.severity]}`}
-          >
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="font-semibold uppercase text-xs">{f.severity}</span>
-              <span className="text-xs opacity-80">page {f.page}</span>
+          <li key={i} className={`rounded-lg border px-3 py-2 text-sm ${SEVERITY[f.severity]}`}>
+            <div className="mb-0.5 flex items-center gap-2 text-xs">
+              <span className="font-bold uppercase tracking-wide">{f.severity}</span>
+              <span className="opacity-70">page {f.page}</span>
               {f.fields.length > 0 && (
-                <span className="text-xs opacity-80">· {f.fields.join(", ")}</span>
+                <span className="opacity-70">· {f.fields.join(", ")}</span>
               )}
             </div>
             {f.reason}
@@ -166,40 +211,42 @@ function FlaggedList({ flagged }: { flagged: FlaggedRecord[] }) {
 
 function RecordsTable({ records }: { records: BillingRecord[] }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm border-collapse">
+    <div className="scrollbar-thin overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-[var(--color-muted)] border-b border-[var(--color-line)]">
-            <th className="py-2 pr-3 font-medium">Treatment date</th>
-            <th className="py-2 pr-3 font-medium">Provider</th>
-            <th className="py-2 pr-3 font-medium">CPT</th>
-            <th className="py-2 pr-3 font-medium text-right">Charges</th>
-            <th className="py-2 pr-3 font-medium text-right">Ins. paid</th>
-            <th className="py-2 pr-3 font-medium text-right">Adjustment</th>
-            <th className="py-2 pr-3 font-medium text-right">Payments</th>
-            <th className="py-2 pr-3 font-medium text-right">Balance</th>
-            <th className="py-2 font-medium">Page</th>
+          <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <th className="px-3 py-2.5 font-medium">Treatment date</th>
+            <th className="px-3 py-2.5 font-medium">Provider</th>
+            <th className="px-3 py-2.5 font-medium">CPT</th>
+            <th className="px-3 py-2.5 text-right font-medium">Charges</th>
+            <th className="px-3 py-2.5 text-right font-medium">Ins. paid</th>
+            <th className="px-3 py-2.5 text-right font-medium">Adjustment</th>
+            <th className="px-3 py-2.5 text-right font-medium">Payments</th>
+            <th className="px-3 py-2.5 text-right font-medium">Balance</th>
+            <th className="px-3 py-2.5 font-medium">Page</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-slate-100">
           {records.map((r, i) => (
-            <tr key={i} className="border-b border-[var(--color-line)] last:border-0 align-top">
-              <td className="py-2 pr-3 whitespace-nowrap">{r.treatment_date}</td>
-              <td className="py-2 pr-3">
-                <div>{r.provider}</div>
+            <tr key={i} className="align-top transition hover:bg-slate-50">
+              <td className="whitespace-nowrap px-3 py-2.5 text-slate-700">{r.treatment_date}</td>
+              <td className="px-3 py-2.5">
+                <div className="text-slate-800">{r.provider}</div>
                 {(r.insurers.length > 0 || r.third_parties.length > 0) && (
-                  <div className="text-xs text-[var(--color-muted)]">
+                  <div className="text-xs text-slate-400">
                     {[...r.insurers, ...r.third_parties].join(", ")}
                   </div>
                 )}
               </td>
-              <td className="py-2 pr-3 text-xs">{r.cpt_codes.join(", ") || "—"}</td>
-              <td className="py-2 pr-3 text-right whitespace-nowrap tabular-nums">{money(r.total_charges)}</td>
-              <td className="py-2 pr-3 text-right whitespace-nowrap tabular-nums">{money(r.ins_paid)}</td>
-              <td className="py-2 pr-3 text-right whitespace-nowrap tabular-nums">{money(r.adjustment)}</td>
-              <td className="py-2 pr-3 text-right whitespace-nowrap tabular-nums">{money(r.payments)}</td>
-              <td className="py-2 pr-3 text-right whitespace-nowrap tabular-nums">{money(r.balance)}</td>
-              <td className="py-2 whitespace-nowrap">{r.page}</td>
+              <td className="px-3 py-2.5 text-xs text-slate-500">
+                {r.cpt_codes.join(", ") || "—"}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{money(r.total_charges)}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{money(r.ins_paid)}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{money(r.adjustment)}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{money(r.payments)}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-medium text-slate-900">{money(r.balance)}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-slate-500">{r.page}</td>
             </tr>
           ))}
         </tbody>
@@ -209,23 +256,27 @@ function RecordsTable({ records }: { records: BillingRecord[] }) {
 }
 
 function Metrics({ job }: { job: Job }) {
-  const items: [string, string][] = [];
+  const items: { Icon: (p: { className?: string }) => React.ReactElement; label: string; value: string }[] = [];
   if (job.token_usage) {
-    items.push([
-      "Tokens",
-      `${job.token_usage.total.toLocaleString()} (${job.token_usage.input} in / ${job.token_usage.output} out)`,
-    ]);
+    items.push({
+      Icon: Bolt,
+      label: "Tokens",
+      value: `${job.token_usage.total.toLocaleString()} (${job.token_usage.input} in / ${job.token_usage.output} out)`,
+    });
   }
-  if (job.cost_usd !== null) items.push(["Est. cost", `$${job.cost_usd.toFixed(4)}`]);
+  if (job.cost_usd !== null) {
+    items.push({ Icon: Coins, label: "Est. cost", value: `$${job.cost_usd.toFixed(4)}` });
+  }
   if (job.processing_duration_seconds !== null) {
-    items.push(["Duration", `${job.processing_duration_seconds.toFixed(1)}s`]);
+    items.push({ Icon: Clock, label: "Duration", value: `${job.processing_duration_seconds.toFixed(1)}s` });
   }
   if (items.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-[var(--color-muted)] pt-1 border-t border-[var(--color-line)]">
-      {items.map(([k, v]) => (
-        <span key={k}>
-          <span className="font-medium">{k}:</span> {v}
+    <div className="flex flex-wrap gap-x-5 gap-y-1.5 border-t border-slate-200 pt-3 text-xs text-slate-500">
+      {items.map(({ Icon, label, value }) => (
+        <span key={label} className="inline-flex items-center gap-1.5">
+          <Icon className="h-3.5 w-3.5 text-slate-400" />
+          <span className="font-medium text-slate-600">{label}:</span> {value}
         </span>
       ))}
     </div>
