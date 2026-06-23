@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # exponential: base * 2**(attempt-1) seconds.
     EXTRACTION_MAX_ATTEMPTS: int = 3
     EXTRACTION_BACKOFF_BASE_SECONDS: float = 2.0
+    # Max tool-calling turns the extraction agent may take before being forced to
+    # finish. Generous so large multi-provider documents don't exhaust it.
+    EXTRACTION_MAX_TURNS: int = 40
     # A job in 'processing' longer than this is presumed orphaned by a crashed
     # worker and recovered (well above the few seconds a real job takes).
     WORKER_STALL_TIMEOUT_MINUTES: int = 5

@@ -5,6 +5,7 @@ from agents import Runner, Usage
 from app.ai.agents.factory import AgentFactory
 from app.ai.config import EXTRACTION_AGENT_CONFIG
 from app.ai.context import RunContext
+from app.config.settings import get_settings
 from app.core.common.logger import get_logger
 from app.models.extraction import ExtractionOutput
 
@@ -14,12 +15,14 @@ class ExtractionAgentExecutor:
 
     The agent navigates the document with tools and returns a validated
     ExtractionOutput. ``max_turns`` bounds the tool-calling loop; large documents
-    may need several read_pages calls, so it is set generously but finite.
+    may need several read_pages calls, so it defaults (via settings) to a
+    generous-but-finite budget.
     """
 
-    def __init__(self, *, agent=None, max_turns: int = 24) -> None:
+    def __init__(self, *, agent=None, max_turns: int | None = None) -> None:
         self.agent = agent if agent is not None else AgentFactory.build_extraction_agent()
-        self.max_turns = max(1, max_turns)
+        resolved = max_turns if max_turns is not None else get_settings().EXTRACTION_MAX_TURNS
+        self.max_turns = max(1, resolved)
         self.logger = get_logger(__name__)
 
     async def _render_user(self, ctx: RunContext) -> str:
