@@ -6,7 +6,7 @@ import type { BillingRecord, FlaggedRecord, Job, JobStatus } from "@/lib/types";
 
 const STATUS_STYLES: Record<JobStatus, string> = {
   pending: "bg-slate-100 text-slate-700",
-  processing: "bg-blue-100 text-blue-700",
+  processing: "bg-blue-100 text-blue-700 animate-pulse",
   completed: "bg-green-100 text-green-700",
   failed: "bg-red-100 text-red-700",
   cancelled: "bg-zinc-100 text-zinc-600",
@@ -21,6 +21,14 @@ const SEVERITY_STYLES: Record<FlaggedRecord["severity"], string> = {
 function money(value: number | null): string {
   if (value === null || value === undefined) return "—";
   return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function sum(records: BillingRecord[], key: keyof BillingRecord): number | null {
+  const vals = records
+    .map((r) => r[key])
+    .filter((v): v is number => typeof v === "number");
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + b, 0);
 }
 
 function fileName(path: string): string {
@@ -40,24 +48,31 @@ export function JobCard({
 }) {
   const [open, setOpen] = useState(false);
   const hasResult = job.records.length > 0 || job.flagged.length > 0;
+  const cached =
+    job.status === "completed" && job.processing_duration_seconds === 0;
 
   return (
     <li className="card overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-3">
         <button
-          className="flex-1 flex items-center gap-3 text-left"
+          className="flex-1 flex items-center gap-3 text-left min-w-0"
           onClick={() => setOpen((v) => !v)}
         >
           <StatusBadge status={job.status} />
           <span className="font-medium truncate">{fileName(job.pdf_path)}</span>
+          {cached && (
+            <span className="badge bg-violet-100 text-violet-700" title="Reused a previous extraction of identical content">
+              cached
+            </span>
+          )}
           {job.records.length > 0 && (
-            <span className="text-xs text-[var(--color-muted)]">
+            <span className="text-xs text-[var(--color-muted)] shrink-0">
               {job.records.length} record{job.records.length === 1 ? "" : "s"}
             </span>
           )}
           {job.flagged.length > 0 && (
-            <span className="text-xs text-amber-700">
-              {job.flagged.length} flagged
+            <span className="text-xs font-medium text-amber-700 shrink-0">
+              ⚠ {job.flagged.length} flagged
             </span>
           )}
         </button>
@@ -88,7 +103,12 @@ export function JobCard({
           )}
 
           {job.flagged.length > 0 && <FlaggedList flagged={job.flagged} />}
-          {job.records.length > 0 && <RecordsTable records={job.records} />}
+          {job.records.length > 0 && (
+            <>
+              <FinancialSummary records={job.records} />
+              <RecordsTable records={job.records} />
+            </>
+          )}
 
           <Metrics job={job} />
         </div>
@@ -97,10 +117,32 @@ export function JobCard({
   );
 }
 
+function FinancialSummary({ records }: { records: BillingRecord[] }) {
+  const items: [string, number | null][] = [
+    ["Total charges", sum(records, "total_charges")],
+    ["Insurance paid", sum(records, "ins_paid")],
+    ["Adjustments", sum(records, "adjustment")],
+    ["Patient paid", sum(records, "payments")],
+    ["Balance", sum(records, "balance")],
+  ];
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      {items.map(([label, value]) => (
+        <div key={label} className="rounded-lg bg-[var(--color-canvas)] px-3 py-2">
+          <div className="text-xs text-[var(--color-muted)]">{label}</div>
+          <div className="font-semibold tabular-nums">{money(value)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function FlaggedList({ flagged }: { flagged: FlaggedRecord[] }) {
   return (
     <div>
-      <h4 className="text-sm font-semibold mb-2">Flagged for review</h4>
+      <h4 className="text-sm font-semibold mb-2 text-amber-800">
+        ⚠ Flagged for review ({flagged.length})
+      </h4>
       <ul className="space-y-2">
         {flagged.map((f, i) => (
           <li
@@ -152,11 +194,11 @@ function RecordsTable({ records }: { records: BillingRecord[] }) {
                 )}
               </td>
               <td className="py-2 pr-3 text-xs">{r.cpt_codes.join(", ") || "—"}</td>
-              <td className="py-2 pr-3 text-right whitespace-nowrap">{money(r.total_charges)}</td>
-              <td className="py-2 pr-3 text-right whitespace-nowrap">{money(r.ins_paid)}</td>
-              <td className="py-2 pr-3 text-right whitespace-nowrap">{money(r.adjustment)}</td>
-              <td className="py-2 pr-3 text-right whitespace-nowrap">{money(r.payments)}</td>
-              <td className="py-2 pr-3 text-right whitespace-nowrap">{money(r.balance)}</td>
+              <td className="py-2 pr-3 text-right whitespace-nowrap tabular-nums">{money(r.total_charges)}</td>
+              <td className="py-2 pr-3 text-right whitespace-nowrap tabular-nums">{money(r.ins_paid)}</td>
+              <td className="py-2 pr-3 text-right whitespace-nowrap tabular-nums">{money(r.adjustment)}</td>
+              <td className="py-2 pr-3 text-right whitespace-nowrap tabular-nums">{money(r.payments)}</td>
+              <td className="py-2 pr-3 text-right whitespace-nowrap tabular-nums">{money(r.balance)}</td>
               <td className="py-2 whitespace-nowrap">{r.page}</td>
             </tr>
           ))}
@@ -169,7 +211,10 @@ function RecordsTable({ records }: { records: BillingRecord[] }) {
 function Metrics({ job }: { job: Job }) {
   const items: [string, string][] = [];
   if (job.token_usage) {
-    items.push(["Tokens", `${job.token_usage.total.toLocaleString()} (${job.token_usage.input} in / ${job.token_usage.output} out)`]);
+    items.push([
+      "Tokens",
+      `${job.token_usage.total.toLocaleString()} (${job.token_usage.input} in / ${job.token_usage.output} out)`,
+    ]);
   }
   if (job.cost_usd !== null) items.push(["Est. cost", `$${job.cost_usd.toFixed(4)}`]);
   if (job.processing_duration_seconds !== null) {

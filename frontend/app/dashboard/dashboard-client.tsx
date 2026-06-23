@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { signOut } from "@/lib/auth-client";
@@ -9,6 +9,22 @@ import type { Job, JobStatus } from "@/lib/types";
 import { JobCard } from "./job-card";
 
 const LIVE_STATUSES: JobStatus[] = ["pending", "processing"];
+
+const SUMMARY_ORDER: JobStatus[] = [
+  "processing",
+  "pending",
+  "completed",
+  "failed",
+  "cancelled",
+];
+
+const SUMMARY_DOT: Record<JobStatus, string> = {
+  pending: "bg-slate-400",
+  processing: "bg-blue-500",
+  completed: "bg-green-500",
+  failed: "bg-red-500",
+  cancelled: "bg-zinc-400",
+};
 
 export default function DashboardClient({
   userEmail,
@@ -19,6 +35,7 @@ export default function DashboardClient({
 }) {
   const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -34,17 +51,25 @@ export default function DashboardClient({
     }
   }, []);
 
-  // Initial load + poll while any job is still in flight.
   useEffect(() => {
-    void refresh();
+    void refresh().finally(() => setLoading(false));
   }, [refresh]);
 
+  // Poll while any job is still in flight.
   useEffect(() => {
     const hasLive = jobs.some((j) => LIVE_STATUSES.includes(j.status));
     if (!hasLive) return;
     const id = setInterval(() => void refresh(), 2500);
     return () => clearInterval(id);
   }, [jobs, refresh]);
+
+  const counts = useMemo(() => {
+    const c = {} as Record<JobStatus, number>;
+    for (const j of jobs) c[j.status] = (c[j.status] ?? 0) + 1;
+    return c;
+  }, [jobs]);
+
+  const isProcessing = jobs.some((j) => LIVE_STATUSES.includes(j.status));
 
   async function onUpload(e: React.FormEvent) {
     e.preventDefault();
@@ -109,7 +134,10 @@ export default function DashboardClient({
               required
               className="text-sm file:mr-3 file:btn file:btn-ghost"
             />
-            <label className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
+            <label
+              className="flex items-center gap-2 text-sm text-[var(--color-muted)]"
+              title="Always run a fresh extraction even if this file was processed before"
+            >
               <input
                 type="checkbox"
                 checked={bypassCache}
@@ -121,22 +149,44 @@ export default function DashboardClient({
               {uploading ? "Uploading…" : "Upload & extract"}
             </button>
           </form>
-          {uploadError && (
-            <p className="mt-3 text-sm text-red-600">{uploadError}</p>
-          )}
+          {uploadError && <p className="mt-3 text-sm text-red-600">{uploadError}</p>}
         </section>
 
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold">Your jobs</h2>
-            <button className="btn btn-ghost" onClick={() => void refresh()}>
-              Refresh
-            </button>
+            <div className="flex items-center gap-3">
+              <h2 className="font-semibold">Your jobs</h2>
+              {jobs.length > 0 && (
+                <div className="flex items-center gap-3">
+                  {SUMMARY_ORDER.filter((s) => counts[s]).map((s) => (
+                    <span
+                      key={s}
+                      className="flex items-center gap-1.5 text-xs text-[var(--color-muted)]"
+                    >
+                      <span className={`w-2 h-2 rounded-full ${SUMMARY_DOT[s]}`} />
+                      {counts[s]} {s}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {isProcessing && (
+                <span className="text-xs text-blue-600 animate-pulse">updating…</span>
+              )}
+              <button className="btn btn-ghost" onClick={() => void refresh()}>
+                Refresh
+              </button>
+            </div>
           </div>
 
           {loadError && <p className="text-sm text-red-600 mb-3">{loadError}</p>}
 
-          {jobs.length === 0 ? (
+          {loading ? (
+            <div className="card p-8 text-center text-sm text-[var(--color-muted)]">
+              Loading…
+            </div>
+          ) : jobs.length === 0 ? (
             <div className="card p-8 text-center text-sm text-[var(--color-muted)]">
               No jobs yet. Upload a PDF to get started.
             </div>
