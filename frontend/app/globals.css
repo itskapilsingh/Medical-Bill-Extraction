@@ -1,5 +1,31 @@
 @import "tailwindcss";
 
+/*
+ * Cohere's brand typeface (CohereVariable / CohereMono) is proprietary, so we do
+ * NOT bundle the files. Instead we reference them from Cohere's own public CDN
+ * via @font-face — the browser loads them directly from Cohere, nothing
+ * proprietary is redistributed in this repo. If the CDN blocks cross-origin
+ * loading (CORS) or is unavailable, it falls back to IBM Plex Mono (the bundled,
+ * OFL-licensed look-alike). For real/commercial use, drop these @font-face rules
+ * and rely on the IBM Plex Mono fallback.
+ */
+@font-face {
+  font-family: "CohereVariable";
+  src: url("https://fonts.cohere.com/CohereVariable.woff2") format("woff2"),
+    url("https://fonts.cohere.com/CohereVariable.woff") format("woff");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "CohereMono";
+  src: url("https://fonts.cohere.com/CohereMono-Regular.woff2") format("woff2"),
+    url("https://fonts.cohere.com/CohereMono-Regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light;
 }
@@ -9,13 +35,13 @@ html {
 }
 
 body {
-  font-family: var(--font-brand), ui-monospace, "SF Mono", "Cascadia Mono",
-    "Segoe UI Mono", Menlo, Consolas, monospace;
+  font-family: "CohereVariable", var(--font-brand), ui-monospace, "SF Mono",
+    "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, monospace;
   background-color: #f8fafc; /* slate-50 */
   color: #0f172a; /* slate-900 */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  letter-spacing: -0.01em; /* mono reads a touch wide; tighten slightly */
+  letter-spacing: -0.01em;
 }
 
 ::selection {
