@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { signOut } from "@/lib/auth-client";
-import { cancelJob, listJobs, uploadPdf } from "@/lib/api";
+import { ApiError, cancelJob, listJobs, uploadPdf } from "@/lib/api";
 import type { Job, JobStatus } from "@/lib/types";
 import { JobCard } from "./job-card";
 
@@ -42,14 +42,28 @@ export default function DashboardClient({
   const [bypassCache, setBypassCache] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // If the session expired mid-session, bounce to /login instead of looping on 401s.
+  const handleAuthExpiry = useCallback(
+    (err: unknown): boolean => {
+      if (err instanceof ApiError && err.status === 401) {
+        router.push("/login");
+        router.refresh();
+        return true;
+      }
+      return false;
+    },
+    [router],
+  );
+
   const refresh = useCallback(async () => {
     try {
       setJobs(await listJobs());
       setLoadError(null);
     } catch (err) {
+      if (handleAuthExpiry(err)) return;
       setLoadError(err instanceof Error ? err.message : "Failed to load jobs");
     }
-  }, []);
+  }, [handleAuthExpiry]);
 
   useEffect(() => {
     void refresh().finally(() => setLoading(false));
@@ -82,6 +96,7 @@ export default function DashboardClient({
       if (fileRef.current) fileRef.current.value = "";
       await refresh();
     } catch (err) {
+      if (handleAuthExpiry(err)) return;
       setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
@@ -93,6 +108,7 @@ export default function DashboardClient({
       await cancelJob(jobId);
       await refresh();
     } catch (err) {
+      if (handleAuthExpiry(err)) return;
       setLoadError(err instanceof Error ? err.message : "Cancel failed");
     }
   }

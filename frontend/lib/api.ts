@@ -3,24 +3,35 @@
 
 import type { Job } from "@/lib/types";
 
-async function parseError(res: Response): Promise<string> {
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+async function toError(res: Response): Promise<ApiError> {
+  let message = `Request failed (${res.status})`;
   try {
     const body = await res.json();
-    return body?.message || body?.error || `Request failed (${res.status})`;
+    message = body?.message || body?.error || message;
   } catch {
-    return `Request failed (${res.status})`;
+    // non-JSON body — keep the generic message
   }
+  return new ApiError(message, res.status);
 }
 
 export async function listJobs(): Promise<Job[]> {
   const res = await fetch("/api/backend/jobs", { cache: "no-store" });
-  if (!res.ok) throw new Error(await parseError(res));
+  if (!res.ok) throw await toError(res);
   return res.json();
 }
 
 export async function getJob(jobId: string): Promise<Job> {
   const res = await fetch(`/api/backend/jobs/${jobId}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(await parseError(res));
+  if (!res.ok) throw await toError(res);
   return res.json();
 }
 
@@ -32,11 +43,11 @@ export async function uploadPdf(file: File, bypassCache = false): Promise<Job> {
     method: "POST",
     body: form,
   });
-  if (!res.ok) throw new Error(await parseError(res));
+  if (!res.ok) throw await toError(res);
   return res.json();
 }
 
 export async function cancelJob(jobId: string): Promise<void> {
   const res = await fetch(`/api/backend/jobs/${jobId}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(await parseError(res));
+  if (!res.ok) throw await toError(res);
 }

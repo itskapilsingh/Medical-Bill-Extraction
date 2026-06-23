@@ -47,7 +47,14 @@ async function proxy(
     init.duplex = "half";
   }
 
-  const upstream = await fetch(target, init);
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, init);
+  } catch {
+    // API container down / starting / network blip — return a clean JSON error
+    // the client can parse, not Next's opaque 500 HTML page.
+    return Response.json({ message: "Backend API is unavailable" }, { status: 502 });
+  }
 
   const responseHeaders = new Headers();
   const upstreamType = upstream.headers.get("content-type");
