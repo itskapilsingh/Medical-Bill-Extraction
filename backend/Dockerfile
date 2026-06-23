@@ -21,4 +21,7 @@ RUN uv sync --frozen --no-cache --no-install-project --python /usr/local/bin/pyt
 
 COPY . .
 
+# Ensure the migration entrypoint is executable regardless of how git recorded it.
+RUN chmod +x scripts/migrate.sh
+
 RUN uv sync --frozen --no-cache --python /usr/local/bin/python3

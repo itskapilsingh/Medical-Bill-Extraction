@@ -57,14 +57,21 @@ frontend into `docker-compose.yml` so the whole stack still comes up with one co
 ## Prerequisites
 
 - Docker with Compose v2.
-- A `.env` is already provided, with a working `OPENAI_API_KEY` and the Postgres defaults.
-  Set `BETTER_AUTH_SECRET` to a real random value before running. `.env.example` documents
-  every variable, including the two database identities: an admin role for migrations and an
-  RLS-enforced application role for the API and worker.
+- A `.env` at the repo root. Create it from the template and add your OpenAI key:
+
+  ```bash
+  cp .env.example .env
+  # then set OPENAI_API_KEY (provided with this assignment) in .env
+  ```
+
+  Every variable is documented in `.env.example`, including the two database identities
+  (an admin role for migrations and an RLS-enforced application role for the API and worker)
+  and a ready-to-use `BETTER_AUTH_SECRET` default. The Postgres and DB-role values work
+  as-is for local runs; only `OPENAI_API_KEY` must be filled in.
 
 ## Run with Docker Compose
 
-From the repo root:
+From the repo root (after creating `.env` above):
 
 ```bash
 docker compose up --build

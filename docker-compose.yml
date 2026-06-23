@@ -2,13 +2,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-billing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-billing}
+      POSTGRES_DB: ${POSTGRES_DB:-billing}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-billing} -d ${POSTGRES_DB:-billing}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -17,14 +17,17 @@ services:
 
   api:
     build: ./backend
-    command: ["scripts/migrate.sh", "python", "main.py"]
+    # Invoke through bash so the migration runs regardless of the file's
+    # executable bit (which git on some platforms does not preserve).
+    command: ["bash", "scripts/migrate.sh", "python", "main.py"]
     depends_on:
       postgres:
         condition: service_healthy
     env_file: .env
     volumes:
+      # PDFs are shared with the worker; the app code (incl. scripts/) is baked
+      # into the image, so we deliberately do NOT bind-mount it.
       - ./backend/pdfs:/app/pdfs
-      - ./backend/scripts:/app/scripts
     ports:
       - "8000:8000"
     restart: on-failure
