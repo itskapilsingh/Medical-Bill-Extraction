@@ -19,16 +19,18 @@ _FAKE_DOC = Document(doc_id="t", num_pages=1, pages=[Page(page_num=1, page_conte
 pytestmark = pytest.mark.asyncio
 
 
-async def _seed_pending(admin_engine, owner_id: str, n: int) -> list[str]:
+async def _seed_pending(
+    admin_engine, owner_id: str, n: int, status: str = "pending"
+) -> list[str]:
     ids = [f"job-{uuid.uuid4().hex}" for _ in range(n)]
     async with admin_engine.begin() as conn:
         for jid in ids:
             await conn.execute(
                 text(
-                    "INSERT INTO jobs (id, owner_id, pdf_filename, pdf_path, status) "
-                    "VALUES (:id, :owner, 'x.pdf', '/p/x.pdf', 'pending')"
+                    "INSERT INTO jobs (id, owner_id, pdf_filename, pdf_path, status, "
+                    "started_at) VALUES (:id, :owner, 'x.pdf', '/p/x.pdf', :status, now())"
                 ),
-                {"id": jid, "owner": owner_id},
+                {"id": jid, "owner": owner_id, "status": status},
             )
     return ids
 
@@ -69,7 +71,7 @@ async def test_process_job_writes_result_and_metrics(
     import app.service.extraction_service as svc_module
 
     alice, _ = two_users
-    (job_id,) = await _seed_pending(admin_engine, alice, 1)
+    (job_id,) = await _seed_pending(admin_engine, alice, 1, status="processing")
 
     canned = OrchestratorResult(
         extraction=ExtractionOutput(
@@ -131,7 +133,7 @@ async def test_process_job_failure_marks_failed_and_never_raises(
     from app.service.extraction_service import ExtractionService
 
     alice, _ = two_users
-    (job_id,) = await _seed_pending(admin_engine, alice, 1)
+    (job_id,) = await _seed_pending(admin_engine, alice, 1, status="processing")
 
     def boom(path, doc_id):
         raise RuntimeError("corrupt PDF")

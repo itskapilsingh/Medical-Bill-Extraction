@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.ai.metrics import usage_to_token_dict
+from app.ai.metrics import usage_from_exception, usage_to_token_dict
 
 
 def test_basic_counts():
@@ -29,3 +29,27 @@ def test_cached_and_reasoning_subcounts_kept_when_present():
 def test_missing_fields_degrade_to_zero():
     out = usage_to_token_dict(SimpleNamespace())
     assert out == {"input": 0, "output": 0, "total": 0}
+
+
+def _exc_with_usage(usage):
+    # Shape mirrors agents SDK: exc.run_data.context_wrapper.usage
+    exc = RuntimeError("agent blew up")
+    exc.run_data = SimpleNamespace(context_wrapper=SimpleNamespace(usage=usage))
+    return exc
+
+
+def test_usage_recovered_from_exception():
+    usage = SimpleNamespace(input_tokens=10, output_tokens=4, total_tokens=14)
+    assert usage_from_exception(_exc_with_usage(usage)) is usage
+
+
+def test_usage_recovered_through_cause_chain():
+    usage = SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2)
+    inner = _exc_with_usage(usage)
+    outer = RuntimeError("wrapped after retries")
+    outer.__cause__ = inner  # our retry wrapper re-raises `from` the original
+    assert usage_from_exception(outer) is usage
+
+
+def test_usage_absent_returns_none():
+    assert usage_from_exception(ValueError("corrupt PDF")) is None

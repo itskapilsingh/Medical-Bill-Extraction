@@ -12,8 +12,10 @@ pages it needs:
 - ``search_document`` — find pages containing a phrase (e.g. "Claim Total",
                      "TOTALS"), to jump to summary lines.
 
-Each tool returns plain text. The document lives on ``RunContext`` and is never
-mutated by a tool — the agent's only state is its own message history.
+Each tool's logic lives in a plain helper (``outline_text`` / ``read_pages_text``
+/ ``search_text``) so it is unit-testable without the agent runtime; the
+``@function_tool`` wrappers just bind ``ctx.context.document``. The document is
+never mutated — the agent's only state is its own message history.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from agents.tool_context import ToolContext
 
 from app.ai.context import RunContext
 from app.ai.page_kinds import classify_page
-from app.ai.types import Page
+from app.ai.types import Document
 
 _SNIPPET_CHARS = 100
 
@@ -32,8 +34,47 @@ def _snippet(text: str, limit: int = _SNIPPET_CHARS) -> str:
     return " ".join(text.split())[:limit]
 
 
-def _page_map(ctx: ToolContext[RunContext]) -> dict[int, Page]:
-    return {p.page_num: p for p in ctx.context.document.pages}
+# ------------------------------------------------------------------ pure logic
+
+
+def outline_text(document: Document) -> str:
+    """Render the per-page outline (number, heuristic kind, snippet)."""
+    lines = [f"Document '{document.doc_id}' has {document.num_pages} page(s):"]
+    for page in document.pages:
+        kind = classify_page(page.page_content)
+        lines.append(f"p{page.page_num} [{kind}] {_snippet(page.page_content)}")
+    return "\n".join(lines)
+
+
+def read_pages_text(document: Document, page_numbers: list[int]) -> str:
+    """Render the full text of the requested pages, in order, with markers."""
+    pages = {p.page_num: p for p in document.pages}
+    chunks: list[str] = []
+    for number in page_numbers:
+        page = pages.get(number)
+        if page is None:
+            chunks.append(f"=== page {number} === (out of range)")
+        else:
+            body = page.page_content.strip() or "(no extractable text on this page)"
+            chunks.append(f"=== page {number} ===\n{body}")
+    return "\n\n".join(chunks) if chunks else "(no pages requested)"
+
+
+def search_text(document: Document, query: str) -> str:
+    """Render the pages whose text contains ``query`` (case-insensitive)."""
+    needle = query.lower().strip()
+    if not needle:
+        return "(empty query)"
+    hits: list[str] = []
+    for page in document.pages:
+        if needle in page.page_content.lower():
+            hits.append(f"p{page.page_num}: {_snippet(page.page_content, 140)}")
+    if not hits:
+        return f"No pages contain '{query}'."
+    return f"'{query}' found on {len(hits)} page(s):\n" + "\n".join(hits)
+
+
+# --------------------------------------------------------------- agent tools
 
 
 @function_tool
@@ -61,12 +102,7 @@ async def list_pages(ctx: ToolContext[RunContext]) -> str:
     Returns:
         A newline-delimited outline of every page.
     """
-    doc = ctx.context.document
-    lines = [f"Document '{doc.doc_id}' has {doc.num_pages} page(s):"]
-    for page in doc.pages:
-        kind = classify_page(page.page_content)
-        lines.append(f"p{page.page_num} [{kind}] {_snippet(page.page_content)}")
-    return "\n".join(lines)
+    return outline_text(ctx.context.document)
 
 
 @function_tool
@@ -83,16 +119,7 @@ async def read_pages(ctx: ToolContext[RunContext], page_numbers: list[int]) -> s
     Returns:
         The pages' text, each prefixed with a ``=== page N ===`` marker.
     """
-    pages = _page_map(ctx)
-    chunks: list[str] = []
-    for number in page_numbers:
-        page = pages.get(number)
-        if page is None:
-            chunks.append(f"=== page {number} === (out of range)")
-        else:
-            body = page.page_content.strip() or "(no extractable text on this page)"
-            chunks.append(f"=== page {number} ===\n{body}")
-    return "\n\n".join(chunks) if chunks else "(no pages requested)"
+    return read_pages_text(ctx.context.document, page_numbers)
 
 
 @function_tool
@@ -108,13 +135,4 @@ async def search_document(ctx: ToolContext[RunContext], query: str) -> str:
     Returns:
         Matching page numbers with a snippet around context, or a no-match note.
     """
-    needle = query.lower().strip()
-    if not needle:
-        return "(empty query)"
-    hits: list[str] = []
-    for page in ctx.context.document.pages:
-        if needle in page.page_content.lower():
-            hits.append(f"p{page.page_num}: {_snippet(page.page_content, 140)}")
-    if not hits:
-        return f"No pages contain '{query}'."
-    return f"'{query}' found on {len(hits)} page(s):\n" + "\n".join(hits)
+    return search_text(ctx.context.document, query)

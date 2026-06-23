@@ -3,6 +3,7 @@ against a live Postgres. Extraction is mocked — these test the reliability
 plumbing, not the agent."""
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
@@ -161,15 +162,18 @@ def _canned():
     )
 
 
-async def _seed_one_pending(admin_engine, owner_id):
+async def _seed_processing_job(admin_engine, owner_id, attempts: int = 1):
+    """Seed a job already claimed (status=processing), as the worker would leave
+    it before process_job runs."""
     jid = f"job-{uuid.uuid4().hex}"
     async with admin_engine.begin() as conn:
         await conn.execute(
             text(
-                "INSERT INTO jobs (id, owner_id, pdf_filename, pdf_path, status) "
-                "VALUES (:id, :o, 'a.pdf', '/p/a.pdf', 'pending')"
+                "INSERT INTO jobs (id, owner_id, pdf_filename, pdf_path, status, "
+                "attempts, started_at) VALUES (:id, :o, 'a.pdf', '/p/a.pdf', "
+                "'processing', :att, now())"
             ),
-            {"id": jid, "o": owner_id},
+            {"id": jid, "o": owner_id, "att": attempts},
         )
     return jid
 
@@ -196,7 +200,7 @@ async def test_transient_failures_are_retried_then_succeed(
     import app.service.extraction_service as svc_module
 
     alice, _ = two_users
-    jid = await _seed_one_pending(admin_engine, alice)
+    jid = await _seed_processing_job(admin_engine, alice)
 
     calls = {"n": 0}
 
@@ -220,7 +224,7 @@ async def test_exhausted_retries_end_failed(
     import app.service.extraction_service as svc_module
 
     alice, _ = two_users
-    jid = await _seed_one_pending(admin_engine, alice)
+    jid = await _seed_processing_job(admin_engine, alice)
 
     async def always_rate_limited():
         raise RateLimitError("still rate limited")
@@ -245,7 +249,7 @@ async def test_fatal_error_fails_without_retrying(
     import app.service.extraction_service as svc_module
 
     alice, _ = two_users
-    jid = await _seed_one_pending(admin_engine, alice)
+    jid = await _seed_processing_job(admin_engine, alice)
 
     calls = {"n": 0}
 
@@ -259,3 +263,65 @@ async def test_fatal_error_fails_without_retrying(
 
     assert calls["n"] == 1  # not retried
     assert await _status(admin_engine, jid) == "failed"
+
+
+# ------------------------------------------------- terminal-write guard / metrics
+
+async def test_stale_run_cannot_clobber_after_reclaim(
+    context_manager, admin_engine, two_users, monkeypatch
+):
+    """A run whose claimed attempts no longer match the row (it was recovered and
+    re-claimed) must NOT write its terminal result — the guard rejects it."""
+    import app.service.extraction_service as svc_module
+
+    alice, _ = two_users
+    jid = await _seed_processing_job(admin_engine, alice, attempts=1)
+
+    async def succeed():
+        return _canned()
+
+    service = _make_service(context_manager, svc_module, succeed, monkeypatch)
+    with acting_as(alice):
+        # This run thinks it claimed attempts=99, but the row has attempts=1.
+        await service.process_job(jid, expected_attempts=99)
+
+    # Guard blocked the write — the job is untouched, not clobbered to completed.
+    assert await _status(admin_engine, jid) == "processing"
+
+
+async def test_failed_job_persists_usage_recovered_from_exception(
+    context_manager, admin_engine, two_users, monkeypatch
+):
+    """A terminal agent failure that carries usage (e.g. max-turns) should still
+    surface token_usage/cost on the failed job."""
+    import app.service.extraction_service as svc_module
+
+    alice, _ = two_users
+    jid = await _seed_processing_job(admin_engine, alice, attempts=1)
+
+    class MaxTurnsExceeded(Exception):
+        pass
+
+    async def blow_up_with_usage():
+        exc = MaxTurnsExceeded("max turns")
+        exc.run_data = SimpleNamespace(
+            context_wrapper=SimpleNamespace(
+                usage=SimpleNamespace(input_tokens=200, output_tokens=50, total_tokens=250)
+            )
+        )
+        raise exc
+
+    service = _make_service(context_manager, svc_module, blow_up_with_usage, monkeypatch)
+    with acting_as(alice):
+        await service.process_job(jid, expected_attempts=1)
+
+    async with admin_engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT status, token_usage, cost_usd FROM jobs WHERE id = :id"),
+                {"id": jid},
+            )
+        ).first()
+    assert row.status == "failed"
+    assert row.token_usage["total"] == 250
+    assert row.cost_usd is not None and row.cost_usd > 0

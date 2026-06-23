@@ -138,3 +138,41 @@ async def test_non_pdf_upload_is_rejected(sessions):
                 files={"file": ("notes.pdf", b"just text, no PDF header", "application/pdf")},
             )
             assert resp.status_code == 400
+
+
+async def test_active_view_and_status_filter(sessions, two_users, admin_engine):
+    """GET /jobs/active returns only processing jobs; ?status filters the list."""
+    app = _load_app()
+    alice, _ = two_users
+    headers = _auth(sessions["alice_token"])
+
+    # Seed a processing job for alice (a worker would have claimed it).
+    processing_id = f"job-{uuid.uuid4().hex}"
+    async with admin_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO jobs (id, owner_id, pdf_filename, pdf_path, status, "
+                "started_at) VALUES (:id, :o, 'p.pdf', '/p', 'processing', now())"
+            ),
+            {"id": processing_id, "o": alice},
+        )
+
+    async with app.router.lifespan_context(app):
+        async with await _client(app) as client:
+            # Create a pending job too.
+            await client.post(
+                "/jobs",
+                headers=headers,
+                files={"file": ("bill.pdf", PDF_BYTES, "application/pdf")},
+            )
+
+            active = (await client.get("/jobs/active", headers=headers)).json()
+            assert any(j["job_id"] == processing_id for j in active)
+            assert all(j["status"] == "processing" for j in active)
+
+            pending = (await client.get("/jobs?status=pending", headers=headers)).json()
+            assert len(pending) >= 1
+            assert all(j["status"] == "pending" for j in pending)
+
+            completed = (await client.get("/jobs?status=completed", headers=headers)).json()
+            assert completed == []
