@@ -146,7 +146,7 @@ export default function DashboardClient({
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden items-center gap-2.5 sm:flex">
-              <div className="grid h-8 w-8 place-items-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
+              <div className="grid h-8 w-8 place-items-center rounded-full bg-teal-100 text-xs font-semibold text-teal-700">
                 {initials(userName)}
               </div>
               <div className="leading-tight">
@@ -170,7 +170,7 @@ export default function DashboardClient({
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard label="Documents" value={stats.total} />
           <StatCard label="Completed" value={stats.completed} accent="emerald" />
-          <StatCard label="Records extracted" value={stats.records} accent="indigo" />
+          <StatCard label="Records extracted" value={stats.records} accent="teal" />
           <StatCard label="Needs review" value={stats.flagged} accent="amber" />
         </section>
 
@@ -196,7 +196,7 @@ export default function DashboardClient({
               }}
               className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition ${
                 dragging
-                  ? "border-indigo-400 bg-indigo-50"
+                  ? "border-teal-400 bg-teal-50"
                   : "border-slate-300 bg-slate-50 hover:border-slate-400 hover:bg-slate-100/60"
               }`}
             >
@@ -209,7 +209,7 @@ export default function DashboardClient({
               />
               {file ? (
                 <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
-                  <FileText className="h-4 w-4 text-indigo-600" />
+                  <FileText className="h-4 w-4 text-teal-600" />
                   <span className="font-medium text-slate-800">{file.name}</span>
                   <span className="text-slate-400">{formatBytes(file.size)}</span>
                 </div>
@@ -217,7 +217,7 @@ export default function DashboardClient({
                 <>
                   <UploadCloud className="h-7 w-7 text-slate-400" />
                   <div className="text-sm text-slate-600">
-                    <span className="font-medium text-indigo-600">Click to browse</span>{" "}
+                    <span className="font-medium text-teal-600">Click to browse</span>{" "}
                     or drag &amp; drop a PDF
                   </div>
                 </>
@@ -231,7 +231,7 @@ export default function DashboardClient({
               >
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                   checked={bypassCache}
                   onChange={(e) => setBypassCache(e.target.checked)}
                 />
@@ -240,7 +240,7 @@ export default function DashboardClient({
               <button
                 type="submit"
                 disabled={uploading || !file}
-                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {uploading ? <Loader className="h-4 w-4" /> : <UploadCloud className="h-4 w-4" />}
                 {uploading ? "Uploading…" : "Upload & extract"}
@@ -316,12 +316,12 @@ function StatCard({
 }: {
   label: string;
   value: number;
-  accent?: "slate" | "emerald" | "indigo" | "amber";
+  accent?: "slate" | "emerald" | "teal" | "amber";
 }) {
   const accents: Record<string, string> = {
     slate: "text-slate-900",
     emerald: "text-emerald-600",
-    indigo: "text-indigo-600",
+    teal: "text-teal-600",
     amber: "text-amber-600",
   };
   return (

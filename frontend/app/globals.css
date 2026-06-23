@@ -45,7 +45,7 @@ body {
 }
 
 ::selection {
-  background: #e0e7ff; /* indigo-100 */
+  background: #ccfbf1; /* teal-100 */
 }
 
 /* Shared text input styling used on the auth screens. */
