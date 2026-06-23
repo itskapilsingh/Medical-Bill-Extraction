@@ -48,8 +48,12 @@ async def run() -> None:
                 if job:
                     logger.info("job_claimed", job_id=job["id"], owner_id=job["owner_id"])
                     # The worker has no HTTP session; it writes as the job's owner.
+                    # Pass the claimed attempts so a recovered/re-claimed job can't
+                    # be clobbered by this run's terminal write.
                     with acting_as(job["owner_id"]):
-                        await container.extraction_service.process_job(job["id"])
+                        await container.extraction_service.process_job(
+                            job["id"], expected_attempts=job["attempts"]
+                        )
                 else:
                     await asyncio.sleep(settings.WORKER_POLL_INTERVAL_SECONDS)
             except Exception:

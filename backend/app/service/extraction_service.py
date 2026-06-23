@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 from time import perf_counter
 
+from app.ai.config import EXTRACTION_AGENT_CONFIG
 from app.ai.context import RunContext
+from app.ai.metrics import usage_from_exception, usage_to_token_dict
 from app.ai.orchestrator import ExtractionOrchestrator, OrchestratorResult
 from app.ai.pdf_loader import load_document
+from app.ai.pricing import estimate_cost_usd
 from app.ai.retry import is_transient
 from app.config.settings import get_settings
 from app.core.context_manager import ContextManager
@@ -33,8 +36,14 @@ class ExtractionService(BaseService):
         self.max_attempts = max(1, settings.EXTRACTION_MAX_ATTEMPTS)
         self.backoff_base = settings.EXTRACTION_BACKOFF_BASE_SECONDS
 
-    async def process_job(self, job_id: str) -> None:
-        """Run the full extraction pipeline for an already-claimed job."""
+    async def process_job(self, job_id: str, expected_attempts: int | None = None) -> None:
+        """Run the full extraction pipeline for an already-claimed job.
+
+        ``expected_attempts`` is the attempts value the worker claimed; it guards
+        the terminal write so a run that was recovered out from under us (crash
+        recovery re-queued the job and another worker re-claimed it) cannot
+        overwrite the newer run's result.
+        """
         start = perf_counter()
         try:
             job = await self.job_dao.get(job_id)
@@ -47,7 +56,7 @@ class ExtractionService(BaseService):
             result = await self._run_with_retries(RunContext(document=document), job_id)
             duration = round(perf_counter() - start, 3)
 
-            await self.job_dao.update_status(
+            updated = await self.job_dao.update_status(
                 job_id,
                 "completed",
                 result={
@@ -57,7 +66,17 @@ class ExtractionService(BaseService):
                 token_usage=result.token_usage,
                 cost_usd=result.cost_usd,
                 processing_duration_seconds=duration,
+                expected_status="processing",
+                expected_attempts=expected_attempts,
             )
+            if updated is None:
+                self.logger.warning(
+                    "terminal_write_skipped",
+                    job_id=job_id,
+                    intended="completed",
+                    reason="job no longer in processing (recovered or re-claimed)",
+                )
+                return
             self.logger.info(
                 "job_completed",
                 job_id=job_id,
@@ -69,16 +88,42 @@ class ExtractionService(BaseService):
         except Exception as exc:
             duration = round(perf_counter() - start, 3)
             self.logger.exception("job_failed", job_id=job_id)
+            token_usage, cost_usd = self._usage_on_failure(exc)
             try:
-                await self.job_dao.update_status(
+                updated = await self.job_dao.update_status(
                     job_id,
                     "failed",
                     error=f"{type(exc).__name__}: {exc}",
+                    token_usage=token_usage,
+                    cost_usd=cost_usd,
                     processing_duration_seconds=duration,
+                    expected_status="processing",
+                    expected_attempts=expected_attempts,
                 )
+                if updated is None:
+                    self.logger.warning(
+                        "terminal_write_skipped",
+                        job_id=job_id,
+                        intended="failed",
+                        reason="job no longer in processing (recovered or re-claimed)",
+                    )
             except Exception:
                 # Last-ditch: never let a status-write failure escape the worker.
                 self.logger.exception("job_failed_status_write_error", job_id=job_id)
+
+    def _usage_on_failure(self, exc: BaseException) -> tuple[dict | None, float | None]:
+        """Recover token usage/cost from a failed agent run, if the SDK kept it."""
+        usage = usage_from_exception(exc)
+        if usage is None:
+            return None, None
+        token_usage = usage_to_token_dict(usage)
+        cost = estimate_cost_usd(
+            EXTRACTION_AGENT_CONFIG.model,
+            input_tokens=token_usage.get("input", 0),
+            output_tokens=token_usage.get("output", 0),
+            cached_input_tokens=token_usage.get("cached_input", 0),
+        )
+        return token_usage, cost
 
     async def _run_with_retries(
         self, ctx: RunContext, job_id: str

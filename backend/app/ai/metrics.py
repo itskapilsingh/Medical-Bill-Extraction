@@ -35,3 +35,26 @@ def usage_to_token_dict(usage: Any) -> dict[str, int]:
         tokens["reasoning"] = int(reasoning)
 
     return tokens
+
+
+def usage_from_exception(exc: BaseException) -> Any | None:
+    """Recover token usage from a failed agent run, if the SDK attached it.
+
+    When the Agents SDK aborts a run (max-turns exhausted, schema-validation
+    failure), it attaches the consumed usage to the raised exception at
+    ``exc.run_data.context_wrapper.usage``. Tokens were billed, so we surface them
+    on the failed job rather than reporting null. Walks the ``__cause__`` chain
+    (our retry wrapper re-raises ``from`` the original) and reads everything
+    defensively so a shape change degrades to None, not a crash.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        run_data = getattr(current, "run_data", None)
+        wrapper = getattr(run_data, "context_wrapper", None) if run_data else None
+        usage = getattr(wrapper, "usage", None) if wrapper else None
+        if usage is not None:
+            return usage
+        current = getattr(current, "__cause__", None)
+    return None

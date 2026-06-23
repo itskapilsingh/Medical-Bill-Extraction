@@ -108,12 +108,20 @@ class JobDAO(BasePgDAO[Job]):
         token_usage: dict | None = None,
         cost_usd: float | None = None,
         processing_duration_seconds: float | None = None,
+        expected_status: str | None = None,
+        expected_attempts: int | None = None,
     ) -> dict | None:
         """Update job status and optionally write result/error/metrics.
 
-        Returns the updated job as a dict, or None if no row was visible/updated
-        (either the job does not exist or it belongs to another user — RLS makes
-        those two cases indistinguishable, which is the point).
+        ``expected_status`` / ``expected_attempts`` add an optimistic guard to the
+        WHERE clause. The worker passes ``expected_status='processing'`` and the
+        attempts value it claimed, so a terminal write only lands if THIS run still
+        owns the job. If crash-recovery re-queued the job and another worker
+        re-claimed it (bumping ``attempts``), the guard fails and the stale run's
+        write is a no-op (returns None) instead of clobbering the newer result.
+
+        Returns the updated job as a dict, or None if no row matched (does not
+        exist, owned by another user — RLS-invisible — or the guard rejected it).
         """
         values: dict[str, Any] = {"status": status, "updated_at": utc_now()}
         if result is not None:
@@ -131,13 +139,14 @@ class JobDAO(BasePgDAO[Job]):
         if status in ("completed", "failed", "cancelled"):
             values["completed_at"] = utc_now()
 
+        conditions = [Job.id == job_id]
+        if expected_status is not None:
+            conditions.append(Job.status == expected_status)
+        if expected_attempts is not None:
+            conditions.append(Job.attempts == expected_attempts)
+
         async with self.context_manager.session() as session:
-            stmt = (
-                update(Job)
-                .where(Job.id == job_id)
-                .values(**values)
-                .returning(Job)
-            )
+            stmt = update(Job).where(*conditions).values(**values).returning(Job)
             row = (await session.execute(stmt)).scalar_one_or_none()
             return self._to_dto(row) if row is not None else None
 
