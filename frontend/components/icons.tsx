@@ -115,3 +115,37 @@ export const Coins = (p: IconProps) => (
     <path d="M14.8 3.7a5 5 0 0 1 0 8.6M11 14.6a5 5 0 1 0 6.4 6.4" />
   </svg>
 );
+
+export const ArrowRight = (p: IconProps) => (
+  <svg {...base} {...p}>
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </svg>
+);
+
+export const Eye = (p: IconProps) => (
+  <svg {...base} {...p}>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+export const EyeOff = (p: IconProps) => (
+  <svg {...base} {...p}>
+    <path d="M10.7 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-2.2 3.2M6.6 6.6A18 18 0 0 0 2 12s3.5 7 10 7a10.6 10.6 0 0 0 4.1-.8" />
+    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" />
+  </svg>
+);
+
+export const ShieldCheck = (p: IconProps) => (
+  <svg {...base} {...p}>
+    <path d="M12 3 5 6v6c0 4 3 6.5 7 8 4-1.5 7-4 7-8V6l-7-3Z" />
+    <path d="m9.5 12 1.8 1.8 3.2-3.6" />
+  </svg>
+);
+
+export const Sparkles = (p: IconProps) => (
+  <svg {...base} {...p}>
+    <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
+    <path d="M6.3 6.3 9 9M15 15l2.7 2.7M17.7 6.3 15 9M9 15l-2.7 2.7" />
+  </svg>
+);

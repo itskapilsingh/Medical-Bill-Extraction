@@ -48,6 +48,26 @@ body {
   background: #e0e7ff; /* indigo-100 */
 }
 
+/* Shared text input styling used on the auth screens. */
+.input-base {
+  width: 100%;
+  border-radius: 0.625rem;
+  border: 1px solid #cbd5e1; /* slate-300 */
+  background: #ffffff;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  color: #0f172a;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input-base::placeholder {
+  color: #94a3b8; /* slate-400 */
+}
+.input-base:focus {
+  border-color: #14b8a6; /* teal-500 */
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18);
+}
+
 /* Thin scrollbars for dense data tables. */
 .scrollbar-thin::-webkit-scrollbar {
   height: 8px;
