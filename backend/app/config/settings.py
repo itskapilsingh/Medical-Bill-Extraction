@@ -37,6 +37,16 @@ class Settings(BaseSettings):
     # ENVIRONMENT so dev logs stay readable.
     DB_ECHO: bool = False
 
+    # Reliability (M3).
+    # Bounded retries for transient extraction failures (rate limit, timeout,
+    # 5xx, connection). Total attempts including the first; backoff is
+    # exponential: base * 2**(attempt-1) seconds.
+    EXTRACTION_MAX_ATTEMPTS: int = 3
+    EXTRACTION_BACKOFF_BASE_SECONDS: float = 2.0
+    # A job in 'processing' longer than this is presumed orphaned by a crashed
+    # worker and recovered (well above the few seconds a real job takes).
+    WORKER_STALL_TIMEOUT_MINUTES: int = 5
+
     model_config = {
         "env_file": ".env",
         "case_sensitive": True,
