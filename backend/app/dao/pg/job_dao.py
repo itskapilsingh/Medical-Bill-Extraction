@@ -199,6 +199,35 @@ class JobDAO(BasePgDAO[Job]):
             ).mappings().first()
             return dict(row) if row is not None else None
 
-    async def recover_stalled(self, timeout_minutes: int = 5) -> int:
-        """Reset jobs stuck in processing back to pending (crash recovery, M3)."""
-        raise NotImplementedError("Crash recovery is implemented in M3.")
+    async def recover_stalled(self, timeout_minutes: int, max_attempts: int) -> int:
+        """Recover jobs stranded in 'processing' by a crashed worker.
+
+        Delegates to the recover_stalled_jobs() SECURITY DEFINER function so it
+        can act across owners. Returns the number of jobs recovered.
+        """
+        async with self.context_manager.session() as session:
+            result = await session.execute(
+                text("SELECT recover_stalled_jobs(:t, :m)"),
+                {"t": timeout_minutes, "m": max_attempts},
+            )
+            return int(result.scalar() or 0)
+
+    async def find_cached_result(self, content_hash: str) -> dict | None:
+        """Return the most recent COMPLETED job (visible to the caller) with this
+        content fingerprint, or None.
+
+        RLS scopes the query to the caller's own rows, so a cache hit can never
+        reuse another user's result. The caller (POST /jobs) runs with the user's
+        identity bound, so no explicit owner filter is needed here.
+        """
+        if not content_hash:
+            return None
+        async with self.context_manager.session() as session:
+            query = (
+                select(Job)
+                .where(Job.content_hash == content_hash, Job.status == "completed")
+                .order_by(Job.created_at.desc())
+                .limit(1)
+            )
+            orm = (await session.execute(query)).scalar_one_or_none()
+            return self._to_dto(orm) if orm is not None else None

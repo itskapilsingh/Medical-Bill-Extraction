@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.core.common.time import utc_now
 from app.core.context_manager import ContextManager
 from app.dao.pg.job_dao import JobDAO
 from app.service.base_service import BaseService
@@ -30,8 +31,38 @@ class JobService(BaseService):
         pdf_filename: str,
         pdf_path: str,
         content_hash: str | None = None,
+        bypass_cache: bool = False,
     ) -> dict:
-        """Create a new job in pending status owned by ``owner_id``."""
+        """Create a job for ``owner_id``.
+
+        Unless caching is bypassed, if the same user already has a COMPLETED job
+        with the same content fingerprint, create a new job immediately in
+        ``completed`` status reusing that result + metrics (no reprocessing). The
+        cache lookup is RLS-scoped to the caller, so a hit never crosses users.
+        """
+        if not bypass_cache and content_hash:
+            cached = await self.job_dao.find_cached_result(content_hash)
+            if cached is not None:
+                job = await self.job_dao.create(
+                    owner_id=owner_id,
+                    pdf_filename=pdf_filename,
+                    pdf_path=pdf_path,
+                    content_hash=content_hash,
+                    status="completed",
+                    result=cached["result"],
+                    token_usage=cached["token_usage"],
+                    cost_usd=cached["cost_usd"],
+                    processing_duration_seconds=0.0,
+                    completed_at=utc_now(),
+                )
+                self.logger.info(
+                    "job_cache_hit",
+                    job_id=job["id"],
+                    owner_id=owner_id,
+                    content_hash=content_hash[:12],
+                )
+                return job
+
         job = await self.job_dao.create(
             owner_id=owner_id,
             pdf_filename=pdf_filename,
@@ -68,6 +99,10 @@ class JobService(BaseService):
         See JobDAO.claim_next_job for the concurrency/RLS mechanics.
         """
         return await self.job_dao.claim_next_job()
+
+    async def recover_stalled(self, timeout_minutes: int, max_attempts: int) -> int:
+        """Recover jobs stranded in 'processing' by a crashed worker."""
+        return await self.job_dao.recover_stalled(timeout_minutes, max_attempts)
 
     async def cancel_job(self, job_id: str) -> dict:
         """Cancel a pending job the caller owns.

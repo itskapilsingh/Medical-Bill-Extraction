@@ -49,6 +49,7 @@ async def create_job(
         pdf_filename=file.filename or "upload.pdf",
         pdf_path=pdf_path,
         content_hash=content_hash,
+        bypass_cache=bypass_cache,
     )
     return JobResponse.from_job(job)
 

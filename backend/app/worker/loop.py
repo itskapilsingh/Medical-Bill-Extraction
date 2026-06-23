@@ -15,13 +15,12 @@ async def run() -> None:
     """Main worker loop. Runs indefinitely, polling for pending jobs.
 
     On each iteration:
-    1. Claim the next pending job atomically (safe under N concurrent workers).
-    2. If one was claimed, bind the job OWNER's database identity and process it
+    1. Recover any jobs stranded in `processing` by a crashed worker (time-gated).
+    2. Claim the next pending job atomically (safe under N concurrent workers).
+    3. If one was claimed, bind the job OWNER's database identity and process it
        — so the result write is RLS-scoped to the owner, exactly as if the owner
        had written it. The worker is never an isolation hole.
-    3. If the queue is empty, sleep and retry.
-
-    Crash recovery for jobs stuck in `processing` is M3 (JobDAO.recover_stalled).
+    4. If the queue is empty, sleep and retry.
     """
     settings = get_settings()
     configure_json_logging(settings.LOG_LEVEL, settings.ENVIRONMENT)
@@ -38,6 +37,13 @@ async def run() -> None:
     try:
         while True:
             try:
+                recovered = await container.job_service.recover_stalled(
+                    settings.WORKER_STALL_TIMEOUT_MINUTES,
+                    settings.EXTRACTION_MAX_ATTEMPTS,
+                )
+                if recovered:
+                    logger.warning("jobs_recovered", count=recovered)
+
                 job = await container.job_service.claim_next_job()
                 if job:
                     logger.info("job_claimed", job_id=job["id"], owner_id=job["owner_id"])
