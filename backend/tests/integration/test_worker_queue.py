@@ -11,25 +11,12 @@ from sqlalchemy import text
 
 from app.ai.orchestrator import OrchestratorResult
 from app.ai.types import Document, Page
-from app.config.settings import get_settings
-from app.core.context_manager import ContextManager
 from app.core.identity import acting_as
 from app.models.extraction import BillingRecord, ExtractionOutput
 
 _FAKE_DOC = Document(doc_id="t", num_pages=1, pages=[Page(page_num=1, page_content="x")])
 
 pytestmark = pytest.mark.asyncio
-
-
-@pytest_asyncio.fixture
-async def context_manager():
-    get_settings.cache_clear()
-    cm = ContextManager(get_settings())
-    await cm.initialize()
-    try:
-        yield cm
-    finally:
-        await cm.close()
 
 
 async def _seed_pending(admin_engine, owner_id: str, n: int) -> list[str]:

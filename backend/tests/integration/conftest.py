@@ -21,6 +21,9 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.config.settings import get_settings
+from app.core.context_manager import ContextManager
+
 ADMIN_URL = os.environ["POSTGRES_CONNECTION_STRING"]
 APP_URL = os.environ["APP_DB_CONNECTION_STRING"]
 
@@ -70,6 +73,18 @@ async def app_engine():
         yield engine
     finally:
         await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def context_manager():
+    """An initialised ContextManager bound to the app (RLS) connection."""
+    get_settings.cache_clear()
+    cm = ContextManager(get_settings())
+    await cm.initialize()
+    try:
+        yield cm
+    finally:
+        await cm.close()
 
 
 @pytest_asyncio.fixture
