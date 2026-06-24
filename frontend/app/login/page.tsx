@@ -9,18 +9,12 @@ import {
   CheckCircle,
   Eye,
   EyeOff,
-  FileText,
   Loader,
   ShieldCheck,
   Sparkles,
 } from "@/components/icons";
 
 type Mode = "signin" | "signup";
-
-const PREVIEW_ROWS = [
-  { date: "07/28/2024", provider: "Newton Rehabilitation", amount: "$493.20" },
-  { date: "01/06/2024", provider: "Molina Healthcare", amount: "$2,027.91" },
-];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -84,42 +78,6 @@ export default function LoginPage() {
               charges, payments, and adjustments — every figure traceable to its
               source page, and visible only to you.
             </p>
-
-            {/* Original product-preview mock */}
-            <div className="mt-8 max-w-sm rounded-2xl border border-white/10 bg-white/95 p-4 text-slate-900 shadow-2xl">
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-2 text-sm font-medium">
-                  <FileText className="h-4 w-4 text-[#0b2545]" />
-                  patient_bill.pdf
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                  <CheckCircle className="h-3 w-3" />
-                  Completed
-                </span>
-              </div>
-              <div className="mt-3 space-y-1.5">
-                {PREVIEW_ROWS.map((r) => (
-                  <div
-                    key={r.date}
-                    className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs"
-                  >
-                    <span className="shrink-0 text-slate-500">{r.date}</span>
-                    <span className="truncate text-slate-600">{r.provider}</span>
-                    <span className="shrink-0 font-semibold tabular-nums text-slate-900">
-                      {r.amount}
-                    </span>
-                  </div>
-                ))}
-                <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
-                  <span className="font-semibold uppercase">flagged</span>
-                  <span className="truncate">payer unresolved — review page 9</span>
-                </div>
-              </div>
-              <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs text-slate-400">
-                <span>2 records · 1 flagged</span>
-                <span className="tabular-nums">$0.016 · 38s</span>
-              </div>
-            </div>
           </div>
 
           <div className="relative flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">

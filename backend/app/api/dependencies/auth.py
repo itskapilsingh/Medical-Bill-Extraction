@@ -28,9 +28,19 @@ from urllib.parse import unquote
 from fastapi import Depends, Request
 
 from app.config.settings import Settings, get_settings
+from app.core.common.logger import get_logger
 from app.core.identity import reset_current_user_id, set_current_user_id
 from app.dao.pg.auth_dao import AuthDAO
 from app.service.exceptions import UnauthorizedException
+
+logger = get_logger(__name__)
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 # Better Auth uses the unprefixed name over HTTP and the __Secure- prefixed name
 # over HTTPS; check both.
@@ -90,10 +100,22 @@ async def get_current_user(
     context_manager = request.app.state.context_manager
     raw_token = _extract_raw_token(request, settings.BETTER_AUTH_SECRET)
     if not raw_token:
+        logger.warning(
+            "auth_failed",
+            reason="missing_or_malformed_token",
+            path=request.url.path,
+            client_ip=_client_ip(request),
+        )
         raise UnauthorizedException("Missing or malformed session token")
 
     user = await AuthDAO(context_manager).get_session_user(raw_token)
     if user is None:
+        logger.warning(
+            "auth_failed",
+            reason="invalid_or_expired_session",
+            path=request.url.path,
+            client_ip=_client_ip(request),
+        )
         raise UnauthorizedException("Invalid or expired session")
 
     current = CurrentUser(id=user["id"], email=user["email"], name=user["name"])

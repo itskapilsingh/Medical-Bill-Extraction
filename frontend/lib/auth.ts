@@ -16,9 +16,7 @@ if (process.env.NODE_ENV !== "production") {
   globalForPool.__authPool = pool;
 }
 
-const trustedOrigins = (
-  process.env.TRUSTED_ORIGINS ?? "http://localhost:3000,http://localhost:8000"
-)
+const trustedOrigins = (process.env.TRUSTED_ORIGINS ?? "http://localhost:3000")
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
@@ -35,8 +33,20 @@ export const auth = betterAuth({
   database: pool,
   emailAndPassword: {
     enabled: true,
+    minPasswordLength: 8, // server-enforced (client minLength is advisory only)
+    maxPasswordLength: 128,
     // No email server in this stack; verification is off (Better Auth default).
     requireEmailVerification: false,
+  },
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    updateAge: 60 * 60 * 24, // refresh/rotate the session after a day of use
+  },
+  // Brute-force / abuse protection on the auth endpoints.
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 30,
   },
   trustedOrigins,
 });

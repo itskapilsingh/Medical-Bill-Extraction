@@ -1,6 +1,6 @@
 # Design Document
 
-**Candidate:** [your name]
+**Candidate:** Kapil Singh
 **Date submitted:** [date]
 **Time spent:** [approximate hours, broken down by milestone/day if useful]
 
