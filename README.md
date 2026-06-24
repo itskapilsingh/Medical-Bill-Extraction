@@ -83,7 +83,10 @@ docker compose up --build
 - The worker waits until the API healthcheck passes (2 replicas by default).
 - The web service (Next.js) serves the UI and Better Auth on port `3000`.
 
-PDF uploads use the `pdfs/` volume mounted at `/app/pdfs` inside the API and worker.
+PDF uploads use the Docker-managed `pdf_data` volume mounted at `/app/pdfs`, shared
+by the API and worker. It is a named volume (not a host bind mount) so it stays
+writable under the containers' non-root user and PHI never lands in the host working
+tree; the worker deletes each PDF once its job is done (see [SECURITY.md](SECURITY.md)).
 
 ## Smoke-test the stack
 

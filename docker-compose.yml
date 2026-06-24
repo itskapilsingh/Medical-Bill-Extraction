@@ -25,9 +25,10 @@ services:
         condition: service_healthy
     env_file: .env
     volumes:
-      # PDFs are shared with the worker; the app code (incl. scripts/) is baked
-      # into the image, so we deliberately do NOT bind-mount it.
-      - ./backend/pdfs:/app/pdfs
+      # PDFs are shared with the worker via a named volume (not a host bind mount):
+      # Docker initializes it from the image, so it inherits the non-root appuser's
+      # ownership and stays writable, and PHI never lands in the host working tree.
+      - pdf_data:/app/pdfs
     ports:
       - "8000:8000"
     restart: on-failure
@@ -48,7 +49,7 @@ services:
         condition: service_healthy
     env_file: .env
     volumes:
-      - ./backend/pdfs:/app/pdfs
+      - pdf_data:/app/pdfs
     restart: on-failure
     # The worker drains on SIGTERM (finishes the in-flight job, stops claiming).
     # Give it room to do so before Compose escalates to SIGKILL; a job that runs
@@ -75,3 +76,4 @@ services:
 
 volumes:
   postgres_data:
+  pdf_data:

@@ -25,3 +25,11 @@ COPY . .
 RUN chmod +x scripts/migrate.sh
 
 RUN uv sync --frozen --no-cache --python /usr/local/bin/python3
+
+# Drop root. Create the PDF mount dir up front and hand the whole app tree (the
+# venv and /app/pdfs included) to the non-root user, so the named volume mounted
+# at /app/pdfs inherits writable ownership and the API/worker can persist uploads.
+RUN useradd --create-home --uid 1001 appuser \
+    && mkdir -p /app/pdfs \
+    && chown -R appuser:appuser /app
+USER appuser
