@@ -92,7 +92,9 @@ async def test_process_job_writes_result_and_metrics(
         agent_seconds=0.2,
     )
 
-    monkeypatch.setattr(svc_module, "load_document", lambda path, doc_id: _FAKE_DOC)
+    monkeypatch.setattr(
+        svc_module, "load_document", lambda path, doc_id, max_pages=None: _FAKE_DOC
+    )
 
     class FakeOrchestrator:
         async def run(self, ctx):
@@ -135,7 +137,7 @@ async def test_process_job_failure_marks_failed_and_never_raises(
     alice, _ = two_users
     (job_id,) = await _seed_pending(admin_engine, alice, 1, status="processing")
 
-    def boom(path, doc_id):
+    def boom(path, doc_id, max_pages=None):
         raise RuntimeError("corrupt PDF")
 
     monkeypatch.setattr(svc_module, "load_document", boom)

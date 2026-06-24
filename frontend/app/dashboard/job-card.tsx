@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { fileName, money } from "@/lib/format";
 import type { BillingRecord, FlaggedRecord, Job, JobStatus } from "@/lib/types";
 import {
   AlertTriangle,
@@ -31,20 +32,11 @@ const SEVERITY: Record<FlaggedRecord["severity"], string> = {
   high: "border-red-200 bg-red-50 text-red-800",
 };
 
-function money(value: number | null): string {
-  if (value === null || value === undefined) return "—";
-  return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
-
 function sum(records: BillingRecord[], key: keyof BillingRecord): number | null {
   const vals = records
     .map((r) => r[key])
     .filter((v): v is number => typeof v === "number");
   return vals.length === 0 ? null : vals.reduce((a, b) => a + b, 0);
-}
-
-function fileName(path: string): string {
-  return path.split("/").pop() ?? path;
 }
 
 function timeAgo(iso: string): string {

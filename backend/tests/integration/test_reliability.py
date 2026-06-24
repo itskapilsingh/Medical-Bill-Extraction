@@ -181,7 +181,9 @@ async def _seed_processing_job(admin_engine, owner_id, attempts: int = 1):
 def _make_service(context_manager, svc_module, run_impl, monkeypatch):
     from app.service.extraction_service import ExtractionService
 
-    monkeypatch.setattr(svc_module, "load_document", lambda path, doc_id: _FAKE_DOC)
+    monkeypatch.setattr(
+        svc_module, "load_document", lambda path, doc_id, max_pages=None: _FAKE_DOC
+    )
 
     class FakeOrchestrator:
         async def run(self, ctx):

@@ -6,15 +6,17 @@ BYPASSRLS / superuser attribute, so every statement it runs is subject to the
 Row-Level Security policies added in later migrations. Migrations themselves run
 as the admin/owner role (POSTGRES_CONNECTION_STRING) and are unaffected.
 
-The password here matches APP_DB_CONNECTION_STRING in .env.example. It is a
-development credential; in a real deployment the role would be created out of
-band with a managed secret.
+The role's password is taken from APP_DB_PASSWORD (falling back to the dev value
+that matches .env.example), and the database name from POSTGRES_DB. Set
+APP_DB_PASSWORD from your secrets manager in a real deployment and make
+APP_DB_CONNECTION_STRING use the same value; the defaults are dev-only.
 
 Revision ID: a1771a9c2e01
 Revises: 0de1443cd0f2
 Create Date: 2026-06-22
 
 """
+import os
 from typing import Sequence, Union
 
 from alembic import op
@@ -25,7 +27,10 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 APP_ROLE = "billing_app"
-APP_PASSWORD = "billing_app"
+# Operator-controlled (migration-time), not user input. Default preserves the
+# existing local credential so a no-config boot behaves exactly as before.
+APP_PASSWORD = os.environ.get("APP_DB_PASSWORD", "billing_app")
+DB_NAME = os.environ.get("POSTGRES_DB", "billing")
 
 
 def upgrade() -> None:
@@ -49,12 +54,12 @@ def upgrade() -> None:
     # auth tables it validates against. We deliberately avoid a blanket
     # ALTER DEFAULT PRIVILEGES, which would silently hand the app role write
     # access to the Better Auth tables too.
-    op.execute(f"GRANT CONNECT ON DATABASE billing TO {APP_ROLE};")
+    op.execute(f"GRANT CONNECT ON DATABASE {DB_NAME} TO {APP_ROLE};")
     op.execute(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE};")
 
 
 def downgrade() -> None:
     op.execute(f"REVOKE USAGE ON SCHEMA public FROM {APP_ROLE};")
-    op.execute(f"REVOKE CONNECT ON DATABASE billing FROM {APP_ROLE};")
+    op.execute(f"REVOKE CONNECT ON DATABASE {DB_NAME} FROM {APP_ROLE};")
     # The role itself is intentionally left in place on downgrade; dropping a role
     # that may own privileges elsewhere is unsafe to do blindly.

@@ -9,7 +9,9 @@ get that is the docker stack:
     APP_DB_CONNECTION_STRING=postgresql+asyncpg://billing_app:billing_app@localhost:5432/billing \
     uv run pytest tests/integration
 
-When no such database is reachable, every test here skips rather than fails.
+When no such database is reachable, every test here skips rather than fails —
+UNLESS ``REQUIRE_DB`` is set (as CI does), in which case an unreachable database
+is a hard failure so a green run can't hide silently-skipped integration tests.
 """
 
 import asyncio
@@ -24,8 +26,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.config.settings import get_settings
 from app.core.context_manager import ContextManager
 
-ADMIN_URL = os.environ["POSTGRES_CONNECTION_STRING"]
-APP_URL = os.environ["APP_DB_CONNECTION_STRING"]
+ADMIN_URL = os.environ.get("POSTGRES_CONNECTION_STRING")
+APP_URL = os.environ.get("APP_DB_CONNECTION_STRING")
+REQUIRE_DB = os.environ.get("REQUIRE_DB", "").strip().lower() in ("1", "true", "yes")
 
 
 def _probe(url: str) -> bool:
@@ -48,13 +51,16 @@ def _probe(url: str) -> bool:
         return False
 
 
-_DB_READY = _probe(APP_URL) and _probe(ADMIN_URL)
+_DB_READY = bool(ADMIN_URL and APP_URL) and _probe(APP_URL) and _probe(ADMIN_URL)
 
 
 @pytest.fixture(autouse=True)
 def _require_db():
     if not _DB_READY:
-        pytest.skip("Postgres with migrations not available")
+        msg = "Postgres with migrations not available"
+        if REQUIRE_DB:
+            pytest.fail(f"REQUIRE_DB is set but {msg}")
+        pytest.skip(msg)
 
 
 @pytest_asyncio.fixture

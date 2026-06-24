@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { signOut } from "@/lib/auth-client";
 import { ApiError, cancelJob, listJobs, uploadPdf } from "@/lib/api";
+import { formatBytes, initials } from "@/lib/format";
 import type { Job, JobStatus } from "@/lib/types";
 import {
   CheckCircle,
@@ -18,19 +19,6 @@ import {
 import { JobCard } from "./job-card";
 
 const LIVE_STATUSES: JobStatus[] = ["pending", "processing"];
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
 
 export default function DashboardClient({
   userEmail,

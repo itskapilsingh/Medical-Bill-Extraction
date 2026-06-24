@@ -1,4 +1,5 @@
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -40,3 +41,22 @@ def test_fingerprint_is_content_addressed(tmp_path):
     storage = PdfStorage(str(tmp_path))
     assert storage.fingerprint(b"same") == storage.fingerprint(b"same")
     assert storage.fingerprint(b"a") != storage.fingerprint(b"b")
+
+
+def test_malicious_owner_id_cannot_escape_mount(tmp_path):
+    """A traversal-y owner id is sanitized; the file stays under the mount root."""
+    storage = PdfStorage(str(tmp_path))
+    path, _ = storage.save(owner_id="../../etc/passwd", data=b"%PDF-1.4 x")
+
+    resolved = Path(path).resolve()
+    root = tmp_path.resolve()
+    # The written file is inside the mount, and no path segment is "..".
+    assert root in resolved.parents
+    assert ".." not in resolved.relative_to(root).parts
+    assert "/" not in Path(path).parent.name and "\\" not in Path(path).parent.name
+
+
+def test_blank_owner_id_falls_back(tmp_path):
+    storage = PdfStorage(str(tmp_path))
+    path, _ = storage.save(owner_id="", data=b"%PDF-1.4 y")
+    assert "unknown" in Path(path).parts
