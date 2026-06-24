@@ -29,8 +29,32 @@ class Settings(BaseSettings):
     # App
     PDF_MOUNT_PATH: str = "/app/pdfs"
     LOG_LEVEL: str = "INFO"
-    ENVIRONMENT: str = "development"
+    # Default to production so an unconfigured deployment is safe-by-default
+    # (JSON logs, no SQL echo, no auto-reload). Set ENVIRONMENT=development locally.
+    ENVIRONMENT: str = "production"
+    # Uvicorn auto-reload is decoupled from ENVIRONMENT and OFF by default — it
+    # must never run in a real deployment. Opt in locally with API_RELOAD=true.
+    API_RELOAD: bool = False
     WORKER_POLL_INTERVAL_SECONDS: int = 5
+
+    # Hard cap on uploaded PDF size (bytes). Rejected with 413 above this.
+    MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024  # 25 MB
+
+    # Resource bounds for hostile/large PDFs and slow model calls.
+    PDF_MAX_PAGES: int = 400
+    PDF_PARSE_TIMEOUT_SECONDS: float = 60.0
+    EXTRACTION_TIMEOUT_SECONDS: float = 180.0
+
+    # Per-IP request rate limiting (in-process; use a shared store for >1 replica).
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_MAX_REQUESTS: int = 120          # general API budget per window
+    RATE_LIMIT_UPLOAD_MAX_REQUESTS: int = 15    # stricter budget for POST /jobs
+
+    # PHI retention: delete the source PDF once a job reaches a terminal state,
+    # and purge terminal jobs older than this many days (0 disables the purge).
+    DELETE_PDF_AFTER_PROCESSING: bool = True
+    RETENTION_DAYS: int = 30
 
     # Echo every SQL statement (SQLAlchemy engine.echo). Off by default — it is
     # very noisy; turn on only when debugging queries. Kept separate from

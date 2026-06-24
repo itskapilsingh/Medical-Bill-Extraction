@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.api.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from app.api.routes import health, jobs
 from app.config.settings import get_settings
 from app.core.common.logger import configure_json_logging
@@ -28,6 +29,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Medical Billing Extraction API", lifespan=lifespan)
+
+_settings = get_settings()
+# Outermost first: security headers wrap everything; rate limiting runs before routing.
+app.add_middleware(SecurityHeadersMiddleware)
+if _settings.RATE_LIMIT_ENABLED:
+    app.add_middleware(
+        RateLimitMiddleware,
+        window_seconds=_settings.RATE_LIMIT_WINDOW_SECONDS,
+        general_max=_settings.RATE_LIMIT_MAX_REQUESTS,
+        upload_max=_settings.RATE_LIMIT_UPLOAD_MAX_REQUESTS,
+    )
 
 
 @app.exception_handler(BaseServiceException)

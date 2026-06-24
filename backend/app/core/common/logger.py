@@ -5,7 +5,6 @@ including from the OpenAI Agents SDK — shares the same formatter.
 """
 from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Any
 import logging
 import sys
@@ -58,16 +57,11 @@ def configure_json_logging(log_level: str = "INFO", environment: str = "developm
     root_logger.handlers.clear()
     root_logger.setLevel(resolved_level)
 
+    # Log to stdout only (12-factor): the platform collects/ships logs. No file
+    # handler — that would also break a read-only / non-root container.
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
     root_logger.addHandler(handler)
-
-    if use_json:
-        log_dir = Path(__file__).parent.parent.parent / ".logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_dir / f"{environment}.json")
-        file_handler.setFormatter(formatter)
-        root_logger.addHandler(file_handler)
 
 
 def configure_openai_agents_logging(*, agents_log_level: str = "DEBUG") -> None:
