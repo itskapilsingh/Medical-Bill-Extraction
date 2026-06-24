@@ -29,18 +29,12 @@ from fastapi import Depends, Request
 
 from app.config.settings import Settings, get_settings
 from app.core.common.logger import get_logger
+from app.core.common.net import client_ip
 from app.core.identity import reset_current_user_id, set_current_user_id
 from app.dao.pg.auth_dao import AuthDAO
 from app.service.exceptions import UnauthorizedException
 
 logger = get_logger(__name__)
-
-
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 # Better Auth uses the unprefixed name over HTTP and the __Secure- prefixed name
 # over HTTPS; check both.
@@ -104,7 +98,7 @@ async def get_current_user(
             "auth_failed",
             reason="missing_or_malformed_token",
             path=request.url.path,
-            client_ip=_client_ip(request),
+            client_ip=client_ip(request, settings.trusted_proxy_set),
         )
         raise UnauthorizedException("Missing or malformed session token")
 
@@ -114,7 +108,7 @@ async def get_current_user(
             "auth_failed",
             reason="invalid_or_expired_session",
             path=request.url.path,
-            client_ip=_client_ip(request),
+            client_ip=client_ip(request, settings.trusted_proxy_set),
         )
         raise UnauthorizedException("Invalid or expired session")
 

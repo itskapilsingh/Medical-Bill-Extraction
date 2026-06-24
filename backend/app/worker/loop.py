@@ -27,7 +27,11 @@ def _install_signal_handlers(stop_event: asyncio.Event) -> None:
             loop.add_signal_handler(sig, stop_event.set)
         except (NotImplementedError, RuntimeError, AttributeError, ValueError):
             try:
-                signal.signal(sig, lambda *_: stop_event.set())
+                # Schedule the set on the loop thread-safely so a signal arriving
+                # while the loop is parked in wait_for() wakes it promptly.
+                signal.signal(
+                    sig, lambda *_: loop.call_soon_threadsafe(stop_event.set)
+                )
             except (ValueError, OSError):
                 pass  # not in the main thread / unsupported — best effort only
 

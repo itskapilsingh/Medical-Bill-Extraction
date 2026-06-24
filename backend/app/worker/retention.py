@@ -37,7 +37,9 @@ def sweep_expired_pdfs(mount_path: str, retention_days: int) -> int:
     cutoff = utc_now().timestamp() - retention_days * 86400
     removed = 0
     try:
-        entries = list(root.glob("*.pdf"))
+        # Recursive: PdfStorage writes to {mount}/{owner}/{uuid}.pdf, so the PDFs
+        # live one level below the mount root, not directly under it.
+        entries = list(root.rglob("*.pdf"))
     except OSError:
         logger.warning("retention_sweep_list_failed", mount_path=mount_path)
         return 0
@@ -50,7 +52,8 @@ def sweep_expired_pdfs(mount_path: str, retention_days: int) -> int:
         except FileNotFoundError:
             continue  # raced another deleter — fine
         except OSError:
-            logger.warning("retention_sweep_unlink_failed", file=entry.name)
+            # Owner-qualified path, since names collide across owner subdirs.
+            logger.warning("retention_sweep_unlink_failed", file=str(entry.relative_to(root)))
 
     if removed:
         logger.info("retention_sweep", removed=removed, retention_days=retention_days)

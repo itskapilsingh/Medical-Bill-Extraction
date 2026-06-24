@@ -39,6 +39,7 @@ if _settings.RATE_LIMIT_ENABLED:
         window_seconds=_settings.RATE_LIMIT_WINDOW_SECONDS,
         general_max=_settings.RATE_LIMIT_MAX_REQUESTS,
         upload_max=_settings.RATE_LIMIT_UPLOAD_MAX_REQUESTS,
+        trusted_proxies=_settings.trusted_proxy_set,
     )
 
 

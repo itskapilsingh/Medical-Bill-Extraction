@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     RATE_LIMIT_MAX_REQUESTS: int = 120          # general API budget per window
     RATE_LIMIT_UPLOAD_MAX_REQUESTS: int = 15    # stricter budget for POST /jobs
 
+    # Comma-separated IPs of trusted reverse proxies. X-Forwarded-For is honored
+    # ONLY when the immediate peer is one of these; otherwise the real TCP peer is
+    # used, so a client talking to the API directly cannot spoof its source IP to
+    # dodge rate limits or poison audit logs. Empty by default — the compose setup
+    # exposes the API directly with no proxy in front.
+    TRUSTED_PROXIES: str = ""
+
     # PHI retention: delete the source PDF once a job reaches a terminal state,
     # and sweep PDFs left on the volume older than this many days (0 disables the
     # sweep). RETENTION_SWEEP_INTERVAL_SECONDS is how often the worker runs it.
@@ -81,6 +88,11 @@ class Settings(BaseSettings):
         "case_sensitive": True,
         "extra": "ignore",
     }
+
+    @property
+    def trusted_proxy_set(self) -> frozenset[str]:
+        """TRUSTED_PROXIES parsed into a set of IP strings (empty by default)."""
+        return frozenset(p.strip() for p in self.TRUSTED_PROXIES.split(",") if p.strip())
 
 
 @lru_cache
