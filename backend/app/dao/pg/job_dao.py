@@ -173,12 +173,26 @@ class JobDAO(BasePgDAO[Job]):
         orm = await self._get_by_id(job_id)
         return self._to_dto(orm) if orm is not None else None
 
-    async def list(self, status: str | None = None) -> list[dict]:
-        """Return the caller's jobs, newest first, optionally filtered by status."""
+    async def list(
+        self,
+        status: str | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Return the caller's jobs, newest first, optionally filtered/paged.
+
+        ``limit``/``offset`` bound the result set so a user with a large history
+        can't force an unbounded response. RLS still scopes the rows to the caller.
+        """
         async with self.context_manager.session() as session:
             query = select(Job).order_by(Job.created_at.desc())
             if status is not None:
                 query = self._apply_filters(query, {"status": status})
+            if offset:
+                query = query.offset(offset)
+            if limit is not None:
+                query = query.limit(limit)
             rows = (await session.execute(query)).scalars().all()
             return [self._to_dto(r) for r in rows]
 
@@ -220,6 +234,30 @@ class JobDAO(BasePgDAO[Job]):
                 {"t": timeout_minutes, "m": max_attempts},
             )
             return int(result.scalar() or 0)
+
+    async def find_active_duplicate(self, content_hash: str) -> dict | None:
+        """Return the caller's most recent still-running job with this fingerprint.
+
+        Used to coalesce duplicate uploads: if the same user re-submits identical
+        bytes while an earlier job is still ``pending``/``processing``, we hand
+        back that job instead of queueing a second identical extraction (and a
+        second spend). RLS scopes this to the caller, so it never coalesces across
+        users. Returns None if there is no in-flight job for this content.
+        """
+        if not content_hash:
+            return None
+        async with self.context_manager.session() as session:
+            query = (
+                select(Job)
+                .where(
+                    Job.content_hash == content_hash,
+                    Job.status.in_((PENDING_STATUS, ACTIVE_STATUS)),
+                )
+                .order_by(Job.created_at.desc())
+                .limit(1)
+            )
+            orm = (await session.execute(query)).scalar_one_or_none()
+            return self._to_dto(orm) if orm is not None else None
 
     async def find_cached_result(self, content_hash: str) -> dict | None:
         """Return the most recent COMPLETED job (visible to the caller) with this

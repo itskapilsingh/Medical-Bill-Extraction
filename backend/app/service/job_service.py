@@ -63,6 +63,20 @@ class JobService(BaseService):
                 )
                 return job
 
+            # No completed result yet, but the same bytes may already be in
+            # flight for this user — coalesce onto it rather than queue a second
+            # identical extraction (and double the spend).
+            inflight = await self.job_dao.find_active_duplicate(content_hash)
+            if inflight is not None:
+                self.logger.info(
+                    "job_dedup_inflight",
+                    job_id=inflight["id"],
+                    owner_id=owner_id,
+                    status=inflight["status"],
+                    content_hash=content_hash[:12],
+                )
+                return inflight
+
         job = await self.job_dao.create(
             owner_id=owner_id,
             pdf_filename=pdf_filename,
@@ -84,9 +98,15 @@ class JobService(BaseService):
             raise JobNotFoundException(job_id)
         return job
 
-    async def list_jobs(self, status: str | None = None) -> list[dict]:
-        """Return the caller's jobs, newest first, optionally filtered by status."""
-        return await self.job_dao.list(status=status)
+    async def list_jobs(
+        self,
+        status: str | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Return the caller's jobs, newest first, optionally filtered and paged."""
+        return await self.job_dao.list(status=status, limit=limit, offset=offset)
 
     async def get_active_jobs(self) -> list[dict]:
         """Return the caller's jobs currently being processed (live state)."""

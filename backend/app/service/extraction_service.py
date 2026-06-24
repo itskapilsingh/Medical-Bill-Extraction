@@ -40,6 +40,23 @@ class ExtractionService(BaseService):
         self.extraction_timeout = settings.EXTRACTION_TIMEOUT_SECONDS
         self.pdf_max_pages = settings.PDF_MAX_PAGES
         self.delete_pdf_after = settings.DELETE_PDF_AFTER_PROCESSING
+        self.pdf_mount_path = settings.PDF_MOUNT_PATH
+
+    _ERROR_MAX_LEN = 500
+
+    def _format_error(self, exc: BaseException) -> str:
+        """Build the client-facing error string for a failed job.
+
+        Redacts the on-disk PDF location so internal filesystem paths don't leak
+        into the API response, and caps the length so a hostile input can't stuff
+        the job row (and every response that returns it) with a huge message.
+        """
+        msg = f"{type(exc).__name__}: {exc}"
+        if self.pdf_mount_path:
+            msg = msg.replace(self.pdf_mount_path, "<pdf-volume>")
+        if len(msg) > self._ERROR_MAX_LEN:
+            msg = msg[: self._ERROR_MAX_LEN - 1] + "…"
+        return msg
 
     async def process_job(self, job_id: str, expected_attempts: int | None = None) -> None:
         """Run the full extraction pipeline for an already-claimed job.
@@ -109,7 +126,7 @@ class ExtractionService(BaseService):
                 updated = await self.job_dao.update_status(
                     job_id,
                     "failed",
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=self._format_error(exc),
                     token_usage=token_usage,
                     cost_usd=cost_usd,
                     processing_duration_seconds=duration,

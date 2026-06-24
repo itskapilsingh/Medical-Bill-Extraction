@@ -81,11 +81,17 @@ async def list_jobs(
         None,
         description="Filter by status: pending|processing|completed|failed|cancelled",
     ),
+    limit: int = Query(
+        100, ge=1, le=200, description="Max jobs to return (newest first)."
+    ),
+    offset: int = Query(0, ge=0, description="Number of jobs to skip (pagination)."),
     current_user: CurrentUser = Depends(get_current_user),
     container: ServiceContainer = Depends(get_container),
 ) -> list[JobResponse]:
-    """List the caller's jobs, newest first."""
-    jobs = await container.job_service.list_jobs(status=status)
+    """List the caller's jobs, newest first. Bounded by ``limit``/``offset``."""
+    jobs = await container.job_service.list_jobs(
+        status=status, limit=limit, offset=offset
+    )
     return [JobResponse.from_job(j) for j in jobs]
 
 
