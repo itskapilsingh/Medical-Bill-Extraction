@@ -35,6 +35,10 @@ class ExtractionService(BaseService):
         settings = get_settings()
         self.max_attempts = max(1, settings.EXTRACTION_MAX_ATTEMPTS)
         self.backoff_base = settings.EXTRACTION_BACKOFF_BASE_SECONDS
+        self.pdf_parse_timeout = settings.PDF_PARSE_TIMEOUT_SECONDS
+        self.extraction_timeout = settings.EXTRACTION_TIMEOUT_SECONDS
+        self.pdf_max_pages = settings.PDF_MAX_PAGES
+        self.delete_pdf_after = settings.DELETE_PDF_AFTER_PROCESSING
 
     async def process_job(self, job_id: str, expected_attempts: int | None = None) -> None:
         """Run the full extraction pipeline for an already-claimed job.
@@ -52,7 +56,14 @@ class ExtractionService(BaseService):
                 self.logger.warning("process_job_not_visible", job_id=job_id)
                 return
 
-            document = load_document(job["pdf_path"], job_id)  # fatal if it raises
+            # Parse off the event loop (pdfplumber is sync) and bound it: a hostile
+            # or huge PDF cannot pin the worker indefinitely.
+            document = await asyncio.wait_for(
+                asyncio.to_thread(
+                    load_document, job["pdf_path"], job_id, self.pdf_max_pages
+                ),
+                timeout=self.pdf_parse_timeout,
+            )
             result = await self._run_with_retries(RunContext(document=document), job_id)
             duration = round(perf_counter() - start, 3)
 
@@ -137,7 +148,11 @@ class ExtractionService(BaseService):
         last_exc: BaseException | None = None
         for attempt in range(1, self.max_attempts + 1):
             try:
-                return await ExtractionOrchestrator().run(ctx)
+                # Bound the model call: a hung request can't hold the worker until
+                # the stall-recovery timer. A timeout is transient -> retried below.
+                return await asyncio.wait_for(
+                    ExtractionOrchestrator().run(ctx), timeout=self.extraction_timeout
+                )
             except Exception as exc:
                 last_exc = exc
                 transient = is_transient(exc)

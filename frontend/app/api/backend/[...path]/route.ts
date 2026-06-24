@@ -9,6 +9,9 @@ export const runtime = "nodejs";
 // Inside Docker the API is reachable at http://api:8000; locally, override via env.
 const API_BASE = process.env.API_INTERNAL_URL ?? "http://api:8000";
 
+// Reject oversized bodies before buffering them (the API enforces the real cap).
+const MAX_BODY_BYTES = 26 * 1024 * 1024; // ~25 MB + multipart overhead
+
 /**
  * Backend-for-frontend proxy.
  *
@@ -43,6 +46,10 @@ async function proxy(
     headers: forwardHeaders,
   };
   if (req.method !== "GET" && req.method !== "HEAD") {
+    const declared = Number(req.headers.get("content-length") ?? "0");
+    if (declared > MAX_BODY_BYTES) {
+      return Response.json({ message: "Upload too large" }, { status: 413 });
+    }
     init.body = await req.arrayBuffer();
     init.duplex = "half";
   }

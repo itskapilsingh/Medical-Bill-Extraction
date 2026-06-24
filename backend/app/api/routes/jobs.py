@@ -16,9 +16,30 @@ from app.api.schema.job import JobResponse
 from app.config.settings import Settings, get_settings
 from app.core.storage import InvalidPdfError, PdfStorage
 from app.service.container import ServiceContainer
-from app.service.exceptions import InvalidUploadException
+from app.service.exceptions import InvalidUploadException, PayloadTooLargeException
 
 router = APIRouter()
+
+_UPLOAD_CHUNK = 1024 * 1024  # 1 MiB
+
+
+async def _read_capped(file: UploadFile, max_bytes: int) -> bytes:
+    """Read an upload in chunks, aborting as soon as it exceeds ``max_bytes``.
+
+    Avoids buffering an unbounded payload into memory: we never accumulate more
+    than ``max_bytes`` (+ one chunk) before rejecting with 413.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise PayloadTooLargeException(max_bytes)
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=JobResponse)
@@ -37,7 +58,7 @@ async def create_job(
     The file is persisted to the shared volume and a ``pending`` job is created.
     ``bypass_cache`` is accepted now and honoured by the caching layer in M3.
     """
-    data = await file.read()
+    data = await _read_capped(file, settings.MAX_UPLOAD_BYTES)
     storage = PdfStorage(settings.PDF_MOUNT_PATH)
     try:
         pdf_path, content_hash = storage.save(owner_id=current_user.id, data=data)

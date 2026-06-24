@@ -52,6 +52,16 @@ class InvalidUploadException(BaseServiceException):
         )
 
 
+class PayloadTooLargeException(BaseServiceException):
+    def __init__(self, max_bytes: int) -> None:
+        super().__init__(
+            message=f"Upload exceeds the maximum allowed size of {max_bytes} bytes",
+            error_code=4130,
+            http_status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            details={"max_bytes": max_bytes},
+        )
+
+
 class JobNotFoundException(BaseServiceException):
     def __init__(self, job_id: str) -> None:
         super().__init__(

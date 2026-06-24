@@ -20,16 +20,18 @@ from app.core.common.logger import get_logger
 logger = get_logger(__name__)
 
 
-def load_document(pdf_path: str, doc_id: str) -> Document:
+def load_document(pdf_path: str, doc_id: str, max_pages: int | None = None) -> Document:
     """Load ``pdf_path`` into a Document of per-page text.
 
     Args:
         pdf_path: Absolute path to the PDF on the mounted volume.
         doc_id: Identifier for the run (the job id).
+        max_pages: Reject documents with more than this many pages (a cheap guard
+            against resource-exhaustion via a hostile/huge PDF). ``None`` = no cap.
 
     Raises:
         FileNotFoundError: If the path does not exist.
-        ValueError: If the file has no readable pages.
+        ValueError: If the file has no readable pages or exceeds ``max_pages``.
     """
     path = Path(pdf_path)
     if not path.exists():
@@ -37,6 +39,11 @@ def load_document(pdf_path: str, doc_id: str) -> Document:
 
     pages: list[Page] = []
     with pdfplumber.open(str(path)) as pdf:
+        page_count = len(pdf.pages)
+        if max_pages is not None and page_count > max_pages:
+            raise ValueError(
+                f"PDF has {page_count} pages, exceeding the {max_pages}-page limit"
+            )
         for index, page in enumerate(pdf.pages, start=1):
             text = page.extract_text() or ""
             pages.append(Page(page_num=index, page_content=text))
