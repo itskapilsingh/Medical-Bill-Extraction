@@ -40,10 +40,12 @@ infrastructure controls the code cannot grant itself.
 
 ### Abuse / DoS resistance
 - Per-IP request rate limiting, with a stricter budget for uploads. The client IP
-  is resolved spoof-resistantly: `X-Forwarded-For` is trusted only when the peer is
-  a configured `TRUSTED_PROXIES` entry, otherwise the real TCP peer is used, so a
-  direct client can't rotate the header to dodge the limit. The limiter's state map
-  is swept each window so idle keys can't accumulate without bound.
+  is resolved spoof-resistantly: `X-Forwarded-For` is honored only when the peer is
+  a configured `TRUSTED_PROXIES` entry, and then only the address contributed by our
+  own proxy hops (read right-to-left) is believed — never a client-prepended value —
+  otherwise the real TCP peer is used. So a client can't rotate the header to dodge
+  the limit, with or without a proxy in front. The limiter's state map is swept each
+  window so idle keys can't accumulate without bound.
 - Upload size cap enforced by **streaming** the body (the request is rejected
   before it is fully buffered in memory), at both the BFF and the API.
 - PDF page-count cap, a wall-clock timeout on PDF parsing, and a timeout on the

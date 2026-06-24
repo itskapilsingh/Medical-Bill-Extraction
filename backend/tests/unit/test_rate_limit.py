@@ -88,8 +88,44 @@ async def test_trusted_proxy_xff_gets_per_client_budget():
 
 def test_sweep_drops_idle_keys_but_keeps_active():
     mw = _mw(window=60)
-    mw._hits["g:idle"] = deque([0.0])        # last hit at t=0
-    mw._hits["g:active"] = deque([1000.0])   # last hit at t=1000
-    mw._sweep(now=1000.0)                     # cutoff = 940
+    mw._hits["g:idle"] = deque([0.0])         # far older than the window
+    mw._hits["g:edge"] = deque([939.0])       # just past cutoff (940) -> dropped
+    mw._hits["g:active"] = deque([970.0])     # live: inside window, < now -> kept
+    mw._sweep(now=1000.0)                      # cutoff = 1000 - 60 = 940
     assert "g:idle" not in mw._hits
-    assert "g:active" in mw._hits
+    assert "g:edge" not in mw._hits
+    assert "g:active" in mw._hits             # would fail if cutoff were off by a window
+
+
+@pytest.mark.asyncio
+async def test_dispatch_gate_sweeps_idle_keys_across_window(monkeypatch):
+    # Drive the REAL request path (dispatch), not _sweep() directly, so the
+    # once-per-window gate that actually bounds the map is exercised.
+    import app.api.middleware as mw_mod
+
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(mw_mod.time, "monotonic", lambda: clock["t"])
+
+    mw = _mw(general=5, window=60)
+    await mw.dispatch(_req(peer="1.1.1.1"), _ok)
+    assert "g:1.1.1.1" in mw._hits
+
+    clock["t"] = 1000.0 + 61  # past the window -> next dispatch triggers the sweep
+    await mw.dispatch(_req(peer="2.2.2.2"), _ok)
+    assert "g:1.1.1.1" not in mw._hits        # idle key evicted via the dispatch gate
+    assert "g:2.2.2.2" in mw._hits
+    assert mw._last_sweep == 1061.0
+
+
+@pytest.mark.asyncio
+async def test_dispatch_gate_does_not_sweep_within_window(monkeypatch):
+    import app.api.middleware as mw_mod
+
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(mw_mod.time, "monotonic", lambda: clock["t"])
+
+    mw = _mw(general=5, window=60)
+    await mw.dispatch(_req(peer="1.1.1.1"), _ok)
+    clock["t"] = 1000.0 + 30  # still inside the window -> no sweep
+    await mw.dispatch(_req(peer="2.2.2.2"), _ok)
+    assert "g:1.1.1.1" in mw._hits            # not swept; cadence gate held
