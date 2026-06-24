@@ -80,13 +80,3 @@ class JobNotCancellableException(BaseServiceException):
             http_status=HTTPStatus.CONFLICT,
             details={"job_id": job_id, "current_status": current_status},
         )
-
-
-class ExtractionFailedException(BaseServiceException):
-    def __init__(self, job_id: str, reason: str) -> None:
-        super().__init__(
-            message=f"Extraction failed for job {job_id}: {reason}",
-            error_code=5001,
-            http_status=HTTPStatus.INTERNAL_SERVER_ERROR,
-            details={"job_id": job_id, "reason": reason},
-        )

@@ -78,19 +78,6 @@ def search_text(document: Document, query: str) -> str:
 
 
 @function_tool
-async def echo_tool(ctx: ToolContext[RunContext], message: str) -> str:
-    """Echo a message back. Used only by the echo demo agent.
-
-    Args:
-        message: Any string to echo.
-
-    Returns:
-        The input string prefixed with 'Echo: '.
-    """
-    return f"Echo: {message}"
-
-
-@function_tool
 async def list_pages(ctx: ToolContext[RunContext]) -> str:
     """Outline the document so you can locate the billing pages.
 

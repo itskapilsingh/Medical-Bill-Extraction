@@ -1,8 +1,8 @@
 from agents import Agent, RunContextWrapper
 
-from app.ai.config import ECHO_AGENT_CONFIG, EXTRACTION_AGENT_CONFIG
+from app.ai.config import EXTRACTION_AGENT_CONFIG
 from app.ai.context import RunContext
-from app.ai.tools import echo_tool, list_pages, read_pages, search_document
+from app.ai.tools import list_pages, read_pages, search_document
 from app.models.extraction import ExtractionOutput
 
 
@@ -13,25 +13,6 @@ class AgentFactory:
     ``prompt_loader`` on `RunContext`, its model config from `app.ai.config`, and
     its tools from `tools.py`.
     """
-
-    @staticmethod
-    def build_echo_agent() -> Agent[RunContext]:
-        """Echo agent — full working example for the executor pattern."""
-
-        async def instructions(
-            wrapper: RunContextWrapper[RunContext], agent: Agent
-        ) -> str:
-            return await wrapper.context.prompt_loader.render(
-                ECHO_AGENT_CONFIG.instructions_key, {}
-            )
-
-        return Agent[RunContext](
-            name="echo_agent",
-            instructions=instructions,
-            model=ECHO_AGENT_CONFIG.model,
-            model_settings=ECHO_AGENT_CONFIG.model_settings,
-            tools=[echo_tool],
-        )
 
     @staticmethod
     def build_extraction_agent() -> Agent[RunContext]:

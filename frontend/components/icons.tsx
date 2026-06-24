@@ -16,21 +16,6 @@ const base = {
   focusable: false,
 };
 
-export function Logo({ className = "" }: { className?: string }) {
-  return (
-    <span
-      className={`inline-flex items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-sm ring-1 ring-inset ring-white/10 ${className}`}
-    >
-      <svg width="20" height="20" {...base}>
-        <path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
-        <path d="M14 3v5h5" />
-        <path d="M9 12.5l1.6 1.6L13.5 11" />
-        <path d="M9 17.5h6" />
-      </svg>
-    </span>
-  );
-}
-
 export const UploadCloud = (p: IconProps) => (
   <svg {...base} {...p}>
     <path d="M12 13v8" />

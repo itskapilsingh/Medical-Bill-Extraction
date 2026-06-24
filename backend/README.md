@@ -15,14 +15,17 @@ app/
   dao/       # SQLAlchemy models and DAOs
   models/    # Pydantic output types — extraction.py is the canonical shape
   service/   # Business logic
-  ai/        # OpenAI Agents SDK tools, prompts, echo demo, orchestrator
+  ai/        # OpenAI Agents SDK: extraction agent, tools, prompts, orchestrator
 alembic/     # Schema migrations (run via the container entrypoint)
 scripts/     # migrate.sh — runs alembic then exec's the process command
-pdfs/        # shared upload volume (mounted into api + worker)
 main.py      # API entry (uvicorn)
-worker.py    # Background worker loop
-Dockerfile   # uv sync + .venv (Python 3.12)
+worker.py    # Background worker loop (drains gracefully on SIGTERM)
+Dockerfile   # uv sync + .venv (Python 3.12); runs as a non-root user
 ```
+
+PDF uploads land on the Docker-managed `pdf_data` named volume mounted at
+`/app/pdfs`, shared by the API and worker; each PDF is deleted once its job
+reaches a terminal state (see [`../SECURITY.md`](../SECURITY.md)).
 
 ## Run
 
@@ -36,5 +39,9 @@ flat layout.
 
 - The API and worker must connect as the RLS-enforced application DB role
   (`APP_DB_CONNECTION_STRING`), not the migration or owner role. See `../ASSIGNMENT.md`.
-- The `/jobs` routes and the extraction pipeline ship as `NotImplementedError` stubs; that
-  is your work. The `echo` agent under `app/ai/` is a wiring example, not the solution.
+- The `/jobs` routes and the extraction pipeline are fully implemented: the worker claims
+  jobs with a `SECURITY DEFINER` function (`FOR UPDATE SKIP LOCKED`), runs the extraction
+  agent under the job owner's identity, and persists results + metrics. M3 adds bounded
+  retries with backoff, crash recovery for stalled jobs, and per-user content caching.
+- Security/PHI hardening (security headers, rate limiting, upload + parse + LLM timeouts,
+  PHI minimization, audit logging) is summarized in [`../SECURITY.md`](../SECURITY.md).

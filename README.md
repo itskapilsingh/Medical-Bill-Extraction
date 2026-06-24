@@ -25,7 +25,7 @@ backend/         # Python API + worker (provided, stubbed) — see backend/READM
     dao/         # SQLAlchemy models and DAOs
     models/      # Pydantic output types — extraction.py is the canonical shape
     service/     # Business logic
-    ai/          # OpenAI Agents SDK tools, prompts, echo demo, orchestrator
+    ai/          # OpenAI Agents SDK: extraction agent, tools, prompts, orchestrator
   alembic/       # Schema migrations (run via the API container entrypoint)
   scripts/       # migrate.sh — runs alembic then exec's the process command
   pdfs/          # shared upload volume (mounted into api + worker)
