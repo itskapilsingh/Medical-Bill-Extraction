@@ -156,9 +156,9 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => setShowPw((v) => !v)}
-                    className="absolute inset-y-0 right-2.5 grid place-items-center text-slate-400 hover:text-slate-600"
+                    className="absolute inset-y-0 right-1.5 my-auto grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:text-slate-700"
                     aria-label={showPw ? "Hide password" : "Show password"}
-                    tabIndex={-1}
+                    aria-pressed={showPw}
                   >
                     {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -179,9 +179,19 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {hint && <p className="text-xs text-slate-500">{hint}</p>}
+              {/* Persistent live region (kept mounted so AT reliably announces
+                  the hint when it appears); collapses to sr-only when empty. */}
+              <p
+                aria-live="polite"
+                className={hint ? "text-xs text-slate-500" : "sr-only"}
+              >
+                {hint}
+              </p>
               {error && (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p
+                  role="alert"
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                >
                   {error}
                 </p>
               )}
@@ -189,10 +199,14 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={busy}
+                aria-busy={busy}
                 className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-teal-600 to-teal-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:from-teal-700 hover:to-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {busy ? (
-                  <Loader className="h-4 w-4" />
+                  <>
+                    <Loader className="h-4 w-4" />
+                    <span>{isSignup ? "Creating account…" : "Signing in…"}</span>
+                  </>
                 ) : (
                   <>
                     {isSignup ? "Create account" : "Sign in"}
@@ -214,7 +228,7 @@ export default function LoginPage() {
             </p>
           </div>
 
-          <div className="mt-10 flex items-center justify-between text-xs text-slate-400">
+          <div className="mt-10 flex items-center justify-between text-xs text-slate-500">
             <span>© 2026 Medical Bill Extraction</span>
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5" />

@@ -9,6 +9,11 @@ const base = {
   strokeWidth: 2,
   strokeLinecap: "round" as const,
   strokeLinejoin: "round" as const,
+  // Icons are decorative by default — hidden from assistive tech and removed
+  // from the tab order. Icon-only controls carry their own aria-label, and a
+  // caller can re-expose a meaningful icon by passing aria-hidden={false}.
+  "aria-hidden": true,
+  focusable: false,
 };
 
 export function Logo({ className = "" }: { className?: string }) {
