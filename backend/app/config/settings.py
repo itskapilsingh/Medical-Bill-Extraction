@@ -52,9 +52,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_UPLOAD_MAX_REQUESTS: int = 15    # stricter budget for POST /jobs
 
     # PHI retention: delete the source PDF once a job reaches a terminal state,
-    # and purge terminal jobs older than this many days (0 disables the purge).
+    # and sweep PDFs left on the volume older than this many days (0 disables the
+    # sweep). RETENTION_SWEEP_INTERVAL_SECONDS is how often the worker runs it.
     DELETE_PDF_AFTER_PROCESSING: bool = True
     RETENTION_DAYS: int = 30
+    RETENTION_SWEEP_INTERVAL_SECONDS: int = 3600
 
     # Echo every SQL statement (SQLAlchemy engine.echo). Off by default — it is
     # very noisy; turn on only when debugging queries. Kept separate from

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from time import perf_counter
 
 from app.ai.config import EXTRACTION_AGENT_CONFIG
@@ -49,6 +50,7 @@ class ExtractionService(BaseService):
         overwrite the newer run's result.
         """
         start = perf_counter()
+        job: dict | None = None
         try:
             job = await self.job_dao.get(job_id)
             if job is None:
@@ -88,6 +90,9 @@ class ExtractionService(BaseService):
                     reason="job no longer in processing (recovered or re-claimed)",
                 )
                 return
+            # PHI minimization: the structured result is persisted; the raw PDF
+            # is no longer needed, so drop it from the shared volume.
+            self._delete_pdf(job_id, job["pdf_path"])
             self.logger.info(
                 "job_completed",
                 job_id=job_id,
@@ -118,9 +123,30 @@ class ExtractionService(BaseService):
                         intended="failed",
                         reason="job no longer in processing (recovered or re-claimed)",
                     )
+                elif job is not None:
+                    # Terminal failure: the PDF won't be reprocessed, so drop it.
+                    self._delete_pdf(job_id, job["pdf_path"])
             except Exception:
                 # Last-ditch: never let a status-write failure escape the worker.
                 self.logger.exception("job_failed_status_write_error", job_id=job_id)
+
+    def _delete_pdf(self, job_id: str, pdf_path: str | None) -> None:
+        """Remove the source PDF from the volume once the job is terminal.
+
+        Best-effort PHI minimization: the extracted records are persisted in the
+        DB, so the raw document is no longer needed. Never raises — a cleanup
+        failure must not turn a finished job into a failed one. No-op when the
+        feature is disabled or the path is empty.
+        """
+        if not self.delete_pdf_after or not pdf_path:
+            return
+        try:
+            os.remove(pdf_path)
+            self.logger.info("pdf_deleted", job_id=job_id)
+        except FileNotFoundError:
+            pass  # already gone (cache hit reusing a path, or a prior sweep)
+        except OSError:
+            self.logger.warning("pdf_delete_failed", job_id=job_id)
 
     def _usage_on_failure(self, exc: BaseException) -> tuple[dict | None, float | None]:
         """Recover token usage/cost from a failed agent run, if the SDK kept it."""

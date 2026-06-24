@@ -50,6 +50,10 @@ services:
     volumes:
       - ./backend/pdfs:/app/pdfs
     restart: on-failure
+    # The worker drains on SIGTERM (finishes the in-flight job, stops claiming).
+    # Give it room to do so before Compose escalates to SIGKILL; a job that runs
+    # past this is force-killed and picked up by crash recovery on restart.
+    stop_grace_period: 40s
     deploy:
       replicas: 2
 
