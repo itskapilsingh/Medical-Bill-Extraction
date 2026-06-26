@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:e013e867e712fec275706a6c51c966f0bb0c93cfa8f51000f85a15f9865a28cb
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-billing}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-billing}
@@ -13,24 +13,19 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   api:
     build: ./backend
-    # Invoke through bash so the migration runs regardless of the file's
-    # executable bit (which git on some platforms does not preserve).
     command: ["bash", "scripts/migrate.sh", "python", "main.py"]
     depends_on:
       postgres:
         condition: service_healthy
     env_file: .env
     volumes:
-      # PDFs are shared with the worker via a named volume (not a host bind mount):
-      # Docker initializes it from the image, so it inherits the non-root appuser's
-      # ownership and stays writable, and PHI never lands in the host working tree.
       - pdf_data:/app/pdfs
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     restart: on-failure
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -51,27 +46,29 @@ services:
     volumes:
       - pdf_data:/app/pdfs
     restart: on-failure
-    # The worker drains on SIGTERM (finishes the in-flight job, stops claiming).
-    # Give it room to do so before Compose escalates to SIGKILL; a job that runs
-    # past this is force-killed and picked up by crash recovery on restart.
     stop_grace_period: 40s
     deploy:
       replicas: 2
 
-  # Next.js + Better Auth frontend. Talks to the API server-to-server over the
-  # compose network (api:8000); the browser only ever hits this service on :3000.
   web:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        API_INTERNAL_URL: ${API_INTERNAL_URL:?API_INTERNAL_URL is required}
+        AUTH_DATABASE_URL: ${AUTH_DATABASE_URL:?AUTH_DATABASE_URL is required}
+        BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
+        BETTER_AUTH_URL: ${BETTER_AUTH_URL:?BETTER_AUTH_URL is required}
+        TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:?TRUSTED_ORIGINS is required}
     command: node server.js
     env_file: .env
     environment:
-      # Reach the API over the internal compose network, not localhost.
-      API_INTERNAL_URL: http://api:8000
+      API_INTERNAL_URL: ${API_INTERNAL_URL:?API_INTERNAL_URL is required}
+      AUTH_DATABASE_URL: ${AUTH_DATABASE_URL:?AUTH_DATABASE_URL is required}
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     restart: on-failure
 
 volumes:

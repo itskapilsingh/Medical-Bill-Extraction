@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
+
+from sqlalchemy.exc import IntegrityError
+
 from app.core.common.time import utc_now
 from app.core.context_manager import ContextManager
 from app.dao.pg.job_dao import JobDAO
@@ -41,50 +45,93 @@ class JobService(BaseService):
         cache lookup is RLS-scoped to the caller, so a hit never crosses users.
         """
         if not bypass_cache and content_hash:
-            cached = await self.job_dao.find_cached_result(content_hash)
-            if cached is not None:
-                job = await self.job_dao.create(
-                    owner_id=owner_id,
-                    pdf_filename=pdf_filename,
-                    pdf_path=pdf_path,
-                    content_hash=content_hash,
-                    status="completed",
-                    result=cached["result"],
-                    token_usage=cached["token_usage"],
-                    cost_usd=cached["cost_usd"],
-                    processing_duration_seconds=0.0,
-                    completed_at=utc_now(),
-                )
-                self.logger.info(
-                    "job_cache_hit",
-                    job_id=job["id"],
-                    owner_id=owner_id,
-                    content_hash=content_hash[:12],
-                )
-                return job
+            reusable = await self.create_reusable_job(
+                owner_id=owner_id,
+                pdf_filename=pdf_filename,
+                content_hash=content_hash,
+            )
+            if reusable is not None:
+                return reusable
 
-            # No completed result yet, but the same bytes may already be in
-            # flight for this user — coalesce onto it rather than queue a second
-            # identical extraction (and double the spend).
+        async def _insert() -> dict:
+            return await self.job_dao.create(
+                owner_id=owner_id,
+                pdf_filename=pdf_filename,
+                pdf_path=pdf_path,
+                content_hash=content_hash,
+            )
+
+        try:
+            job = await _insert()
+        except IntegrityError:
             inflight = await self.job_dao.find_active_duplicate(content_hash)
             if inflight is not None:
                 self.logger.info(
-                    "job_dedup_inflight",
+                    "job_dedup_inflight_race",
                     job_id=inflight["id"],
                     owner_id=owner_id,
                     status=inflight["status"],
-                    content_hash=content_hash[:12],
+                    content_hash=(content_hash or "")[:12],
                 )
                 return inflight
+            # The racing winner already reached a terminal state, so the active-
+            # dedup index no longer covers it; a fresh insert now succeeds.
+            job = await _insert()
 
-        job = await self.job_dao.create(
-            owner_id=owner_id,
-            pdf_filename=pdf_filename,
-            pdf_path=pdf_path,
-            content_hash=content_hash,
-        )
         self.logger.info("job_created", job_id=job["id"], owner_id=owner_id)
         return job
+
+    async def create_reusable_job(
+        self,
+        *,
+        owner_id: str,
+        pdf_filename: str,
+        content_hash: str | None,
+    ) -> dict | None:
+        """Return/create a reusable job for duplicate bytes, without a new PDF.
+
+        A completed cache hit creates a new completed row that reuses the cached
+        result and the cached job's existing ``pdf_path`` metadata. An in-flight
+        duplicate returns the existing active job. In both cases the caller does
+        not need to persist a second copy of the same PHI-bearing PDF.
+        """
+        if not content_hash:
+            return None
+
+        cached = await self.job_dao.find_cached_result(content_hash)
+        if cached is not None:
+            job = await self.job_dao.create(
+                owner_id=owner_id,
+                pdf_filename=pdf_filename,
+                pdf_path=cached["pdf_path"],
+                content_hash=content_hash,
+                status="completed",
+                result=cached["result"],
+                token_usage=cached["token_usage"],
+                cost_usd=cached["cost_usd"],
+                processing_duration_seconds=0.0,
+                completed_at=utc_now(),
+            )
+            self.logger.info(
+                "job_cache_hit",
+                job_id=job["id"],
+                owner_id=owner_id,
+                content_hash=content_hash[:12],
+            )
+            return job
+
+        inflight = await self.job_dao.find_active_duplicate(content_hash)
+        if inflight is not None:
+            self.logger.info(
+                "job_dedup_inflight",
+                job_id=inflight["id"],
+                owner_id=owner_id,
+                status=inflight["status"],
+                content_hash=content_hash[:12],
+            )
+            return inflight
+
+        return None
 
     async def get_job(self, job_id: str) -> dict:
         """Return a job by ID. Raises JobNotFoundException if not visible.
@@ -104,13 +151,24 @@ class JobService(BaseService):
         *,
         limit: int | None = None,
         offset: int = 0,
+        before: tuple[datetime, str] | None = None,
     ) -> list[dict]:
-        """Return the caller's jobs, newest first, optionally filtered and paged."""
-        return await self.job_dao.list(status=status, limit=limit, offset=offset)
+        """Return the caller's jobs, newest first, optionally filtered and paged.
+
+        ``before`` is a keyset cursor ``(created_at, id)``; when supplied the page
+        is the rows strictly older than it (stable under concurrent head inserts).
+        """
+        return await self.job_dao.list(
+            status=status, limit=limit, offset=offset, before=before
+        )
 
     async def get_active_jobs(self) -> list[dict]:
         """Return the caller's jobs currently being processed (live state)."""
         return await self.job_dao.get_active()
+
+    async def get_summary(self) -> dict:
+        """Server-side aggregate of the caller's jobs (counts + financial totals)."""
+        return await self.job_dao.summary()
 
     async def claim_next_job(self) -> dict | None:
         """Claim the next pending job for a worker (no caller identity bound).

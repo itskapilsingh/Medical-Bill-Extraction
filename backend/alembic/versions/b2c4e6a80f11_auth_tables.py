@@ -98,8 +98,6 @@ def upgrade() -> None:
         'CREATE INDEX "verification_identifier_idx" ON "verification" ("identifier");'
     )
 
-    # The app role may READ user + session (to authenticate requests) and nothing
-    # more. No write privileges on any auth table; no access to account/verification.
     op.execute(f'GRANT SELECT ON TABLE "user" TO {APP_ROLE};')
     op.execute(f'GRANT SELECT ON TABLE "session" TO {APP_ROLE};')
 

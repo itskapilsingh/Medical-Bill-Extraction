@@ -28,10 +28,6 @@ class ContextManager:
     async def initialize(self) -> None:
         """Create the database engine and session factory. Call once at startup."""
         self._postgres = PostgresProvider(
-            # The application connects as the RLS-enforced role — NOT the schema
-            # owner and NOT a BYPASSRLS role. This is the load-bearing line of the
-            # isolation guarantee: even a wrong WHERE clause cannot cross users
-            # because the database filters every row by current_setting('app.user_id').
             connection_string=self._settings.APP_DB_CONNECTION_STRING,
             connection_settings={
                 "pool_size": 5,

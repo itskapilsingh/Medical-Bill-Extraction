@@ -1,4 +1,6 @@
 .venv
+.venv-test
+.env*
 __pycache__
 *.py[oc]
 *.egg-info
@@ -6,5 +8,7 @@ build/
 dist/
 wheels/
 .pytest_cache
+.logs/
+app/.logs/
 pdfs/*
 !pdfs/.gitkeep

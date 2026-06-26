@@ -34,14 +34,10 @@ jobs:
           --health-retries 10
 
     env:
-      # Admin (owner) connection — used by Alembic and as the admin test role.
       POSTGRES_CONNECTION_STRING: postgresql+asyncpg://billing:billing@localhost:5432/billing
-      # RLS-enforced application role — created by the migrations.
       APP_DB_CONNECTION_STRING: postgresql+asyncpg://billing_app:billing_app@localhost:5432/billing
-      # Settings require these; values are placeholders (no live calls in tests).
       OPENAI_API_KEY: test-key
       BETTER_AUTH_SECRET: test-secret-do-not-use-in-prod
-      # Make the integration suite FAIL (not skip) if the DB isn't reachable.
       REQUIRE_DB: "1"
 
     steps:
@@ -74,8 +70,6 @@ jobs:
 
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      # Build-time placeholders so the bundle never depends on real secrets
-      # (mirrors the Dockerfile; real values are injected at runtime).
       BETTER_AUTH_SECRET: build-time-placeholder
       BETTER_AUTH_URL: http://localhost:3000
       DATABASE_URL: postgres://placeholder:placeholder@localhost:5432/placeholder

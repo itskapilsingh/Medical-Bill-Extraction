@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.service.exceptions import (
     JobNotCancellableException,
@@ -23,12 +24,14 @@ class FakeJobDAO:
         created=None,
         cached=None,
         inflight=None,
+        raise_integrity_times=0,
     ):
         self._get_results = list(get_results or [])
         self._cancel_result = cancel_result
         self._created = created
         self._cached = cached
         self._inflight = inflight
+        self._raise_integrity_times = raise_integrity_times
         self.cancel_calls = 0
         self.create_calls = 0
 
@@ -43,6 +46,14 @@ class FakeJobDAO:
 
     async def create(self, **kwargs):
         self.create_calls += 1
+        self.last_create_kwargs = kwargs
+        if self._raise_integrity_times > 0:
+            self._raise_integrity_times -= 1
+            # Mimic the partial-unique-index (idx_jobs_active_dedup) rejection a
+            # concurrent identical INSERT would hit.
+            raise IntegrityError(
+                "INSERT INTO jobs", {}, Exception("duplicate key value")
+            )
         return self._created
 
     async def find_cached_result(self, content_hash):
@@ -115,7 +126,12 @@ async def test_cancel_loses_race_with_worker_raises_conflict():
 
 
 async def test_create_reuses_completed_cache_hit():
-    cached = {"result": {"records": []}, "token_usage": None, "cost_usd": 0.5}
+    cached = {
+        "pdf_path": "/p/cached.pdf",
+        "result": {"records": []},
+        "token_usage": None,
+        "cost_usd": 0.5,
+    }
     dao = FakeJobDAO(cached=cached, created={"id": "new", "status": "completed"})
     service = make_service(dao)
 
@@ -125,6 +141,7 @@ async def test_create_reuses_completed_cache_hit():
     # A new (completed) job row is created reusing the cached result.
     assert job["status"] == "completed"
     assert dao.create_calls == 1
+    assert dao.last_create_kwargs["pdf_path"] == "/p/cached.pdf"
 
 
 async def test_create_coalesces_onto_inflight_duplicate():
@@ -140,6 +157,18 @@ async def test_create_coalesces_onto_inflight_duplicate():
     assert dao.create_calls == 0
 
 
+async def test_create_reusable_job_returns_none_without_match():
+    dao = FakeJobDAO(cached=None, inflight=None)
+    service = make_service(dao)
+
+    job = await service.create_reusable_job(
+        owner_id="u", pdf_filename="a.pdf", content_hash="h"
+    )
+
+    assert job is None
+    assert dao.create_calls == 0
+
+
 async def test_create_queues_new_job_when_no_duplicate():
     dao = FakeJobDAO(cached=None, inflight=None, created={"id": "new", "status": "pending"})
     service = make_service(dao)
@@ -151,10 +180,57 @@ async def test_create_queues_new_job_when_no_duplicate():
     assert dao.create_calls == 1
 
 
+async def test_create_coalesces_on_unique_violation_race():
+    # Two identical uploads race past the read-then-write dedup; the loser's
+    # INSERT trips the partial unique index. The service must coalesce onto the
+    # in-flight winner instead of surfacing a 500 or queueing a second job.
+    inflight = {"id": "winner", "status": "pending"}
+    dao = FakeJobDAO(
+        cached=None,
+        inflight=inflight,
+        created={"id": "loser"},
+        raise_integrity_times=1,
+    )
+    service = make_service(dao)
+
+    job = await service.create_job(
+        owner_id="u",
+        pdf_filename="a.pdf",
+        pdf_path="/p/a.pdf",
+        content_hash="h",
+        bypass_cache=True,  # even bypassing the cache, never double-extract
+    )
+    assert job["id"] == "winner"
+    assert dao.create_calls == 1  # the rejected INSERT is not retried
+
+
+async def test_create_retries_insert_when_race_winner_already_terminal():
+    # The racing winner reached a terminal state before our retry lookup, so it
+    # no longer occupies the active-dedup index: a fresh insert must succeed
+    # rather than the request failing.
+    dao = FakeJobDAO(
+        cached=None,
+        inflight=None,
+        created={"id": "fresh", "status": "pending"},
+        raise_integrity_times=1,
+    )
+    service = make_service(dao)
+
+    job = await service.create_job(
+        owner_id="u",
+        pdf_filename="a.pdf",
+        pdf_path="/p/a.pdf",
+        content_hash="h",
+        bypass_cache=True,
+    )
+    assert job["id"] == "fresh"
+    assert dao.create_calls == 2  # first rejected, second succeeds
+
+
 async def test_bypass_cache_skips_dedup_lookups():
     # If dedup ran it would coalesce onto this; bypass must ignore it.
     dao = FakeJobDAO(
-        cached={"result": {}, "token_usage": None, "cost_usd": 0},
+        cached={"pdf_path": "/p/cached.pdf", "result": {}, "token_usage": None, "cost_usd": 0},
         inflight={"id": "existing"},
         created={"id": "fresh", "status": "pending"},
     )

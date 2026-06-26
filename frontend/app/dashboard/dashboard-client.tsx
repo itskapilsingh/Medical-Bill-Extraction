@@ -1,341 +1,397 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 
-import { signOut } from "@/lib/auth-client";
-import { ApiError, cancelJob, listJobs, uploadPdf } from "@/lib/api";
-import { formatBytes, initials } from "@/lib/format";
-import type { Job, JobStatus } from "@/lib/types";
+import { ApiError, uploadPdfs } from "@/lib/api";
+import { formatBytes } from "@/lib/format";
+import { uploadErrorMessage } from "@/lib/messages";
+import { useToast } from "@/components/toast";
+import { useJobs, useSummary } from "@/lib/use-jobs";
 import {
+  AlertTriangle,
+  ArrowRight,
   CheckCircle,
   FileText,
   Inbox,
+  LayoutGrid,
   Loader,
-  LogOut,
   RefreshCw,
   UploadCloud,
+  X,
 } from "@/components/icons";
 import { JobCard } from "./job-card";
 
-const LIVE_STATUSES: JobStatus[] = ["pending", "processing"];
+const RECENT_LIMIT = 5;
 
-export default function DashboardClient({
-  userEmail,
-  userName,
-}: {
-  userEmail: string;
-  userName: string;
-}) {
-  const router = useRouter();
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+export default function DashboardClient() {
+  const toast = useToast();
+  const { jobs, loading, loadError, refresh, onCancel, handleAuthExpiry } = useJobs();
+  const { summary, refreshSummary } = useSummary();
   const [uploading, setUploading] = useState(false);
   const [bypassCache, setBypassCache] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleAuthExpiry = useCallback(
-    (err: unknown): boolean => {
-      if (err instanceof ApiError && err.status === 401) {
-        router.push("/login");
-        router.refresh();
-        return true;
-      }
-      return false;
-    },
-    [router],
+  // Headline numbers come from the server-side aggregate, so they're correct no
+  // matter how many documents the user has (the recents list below is just a peek).
+  const cards = {
+    total: summary?.total ?? 0,
+    completed: summary?.completed ?? 0,
+    records: summary?.records_count ?? 0,
+    flagged: summary?.flagged_count ?? 0,
+  };
+
+  const recent = jobs.slice(0, RECENT_LIMIT);
+  const isProcessing = (summary?.processing ?? 0) > 0;
+
+  async function refreshAll() {
+    await Promise.all([refresh(), refreshSummary()]);
+  }
+  const uploadButtonLabel =
+    files.length === 0
+      ? "Upload & extract"
+      : `Upload ${files.length} PDF${files.length === 1 ? "" : "s"} & extract`;
+
+  const selectedBytes = useMemo(
+    () => files.reduce((total, selected) => total + selected.size, 0),
+    [files],
   );
 
-  const refresh = useCallback(async () => {
-    try {
-      setJobs(await listJobs());
-      setLoadError(null);
-    } catch (err) {
-      if (handleAuthExpiry(err)) return;
-      setLoadError(err instanceof Error ? err.message : "Failed to load jobs");
+  function isPdf(f: File): boolean {
+    return f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+  }
+
+  function pickFiles(selected: FileList | File[] | null) {
+    const picked = selected ? Array.from(selected) : [];
+    const pdfs = picked.filter(isPdf);
+    if (picked.length > pdfs.length) {
+      toast.error("Only PDF files can be uploaded.");
     }
-  }, [handleAuthExpiry]);
+    setFiles(pdfs);
+  }
 
-  useEffect(() => {
-    void refresh().finally(() => setLoading(false));
-  }, [refresh]);
+  function clearFiles() {
+    setFiles([]);
+    if (fileRef.current) fileRef.current.value = "";
+  }
 
-  useEffect(() => {
-    const hasLive = jobs.some((j) => LIVE_STATUSES.includes(j.status));
-    if (!hasLive) return;
-    const id = setInterval(() => void refresh(), 2500);
-    return () => clearInterval(id);
-  }, [jobs, refresh]);
-
-  const stats = useMemo(() => {
-    const completed = jobs.filter((j) => j.status === "completed").length;
-    const live = jobs.filter((j) => LIVE_STATUSES.includes(j.status)).length;
-    const records = jobs.reduce((a, j) => a + j.records.length, 0);
-    const flagged = jobs.reduce((a, j) => a + j.flagged.length, 0);
-    return { total: jobs.length, completed, live, records, flagged };
-  }, [jobs]);
-
-  const isProcessing = stats.live > 0;
-
-  function pickFile(f: File | null) {
-    setUploadError(null);
-    setFile(f);
+  function removeFile(index: number) {
+    setFiles((current) => current.filter((_, i) => i !== index));
+    if (fileRef.current) fileRef.current.value = "";
   }
 
   async function onUpload(e: React.FormEvent) {
     e.preventDefault();
-    if (!file) return;
+    if (files.length === 0) return;
     setUploading(true);
-    setUploadError(null);
     try {
-      await uploadPdf(file, bypassCache);
-      setFile(null);
+      const result = await uploadPdfs(files, bypassCache);
+      const authFailure = result.failed.find(
+        ({ error }) => error instanceof ApiError && error.status === 401,
+      );
+      if (authFailure && handleAuthExpiry(authFailure.error)) return;
+
+      if (result.accepted.length > 0) {
+        await refreshAll();
+      }
+
+      if (result.failed.length === 0) {
+        clearFiles();
+        toast.success(
+          `${result.accepted.length} PDF${result.accepted.length === 1 ? "" : "s"} accepted. Extracting records...`,
+        );
+        return;
+      }
+
+      setFiles(result.failed.map(({ file }) => file));
       if (fileRef.current) fileRef.current.value = "";
-      await refresh();
+
+      if (result.accepted.length > 0) {
+        toast.success(
+          `${result.accepted.length} PDF${result.accepted.length === 1 ? "" : "s"} accepted.`,
+        );
+      }
+      const firstFailure = result.failed[0];
+      toast.error(
+        `${result.failed.length} upload${
+          result.failed.length === 1 ? "" : "s"
+        } failed. ${firstFailure.file.name}: ${uploadErrorMessage(firstFailure.error)}`,
+      );
     } catch (err) {
       if (handleAuthExpiry(err)) return;
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
+      toast.error(uploadErrorMessage(err));
     } finally {
       setUploading(false);
     }
   }
 
-  async function onCancel(jobId: string) {
-    try {
-      await cancelJob(jobId);
-      await refresh();
-    } catch (err) {
-      if (handleAuthExpiry(err)) return;
-      setLoadError(err instanceof Error ? err.message : "Cancel failed");
-    }
-  }
-
-  async function onSignOut() {
-    await signOut();
-    router.push("/login");
-    router.refresh();
-  }
-
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
-          <div className="flex items-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.png"
-              alt="Medical Bill Extraction"
-              className="h-9 w-auto"
+    <>
+      <h1 className="sr-only">Dashboard</h1>
+      {/* Stats */}
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard
+          label="Documents"
+          value={cards.total}
+          accent="slate"
+          Icon={FileText}
+          href="/dashboard/documents"
+        />
+        <StatCard
+          label="Completed"
+          value={cards.completed}
+          accent="emerald"
+          Icon={CheckCircle}
+          href="/dashboard/documents"
+        />
+        <StatCard
+          label="Records extracted"
+          value={cards.records}
+          accent="teal"
+          Icon={LayoutGrid}
+          href="/dashboard/records"
+        />
+        <StatCard
+          label="Needs review"
+          value={cards.flagged}
+          accent="amber"
+          Icon={AlertTriangle}
+          href="/dashboard/records"
+        />
+      </section>
+
+      {/* Upload */}
+      <section className="card p-5">
+        <h2 className="text-sm font-semibold text-slate-900">Upload billing PDFs</h2>
+        <p className="mt-0.5 text-sm text-slate-500">
+          Processed asynchronously by the extraction agent. Results are visible only to
+          your account.
+        </p>
+
+        <form onSubmit={onUpload} className="mt-4 space-y-3">
+          <label
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              pickFiles(e.dataTransfer.files ?? null);
+            }}
+            className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-500/30 ${
+              dragging
+                ? "border-teal-400 bg-teal-50"
+                : "border-slate-300 bg-slate-50 hover:border-slate-400 hover:bg-slate-100/60"
+            }`}
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              multiple
+              className="sr-only"
+              onChange={(e) => pickFiles(e.target.files)}
             />
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-2.5 sm:flex">
-              <div className="grid h-8 w-8 place-items-center rounded-full bg-teal-100 text-xs font-semibold text-teal-700">
-                {initials(userName)}
+            {files.length > 0 ? (
+              <div className="flex max-w-full flex-wrap items-center justify-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
+                <FileText className="h-4 w-4 text-teal-600" />
+                <span className="font-medium text-slate-800">
+                  {files.length} PDF{files.length === 1 ? "" : "s"} selected
+                </span>
+                <span className="text-slate-500">{formatBytes(selectedBytes)}</span>
               </div>
-              <div className="leading-tight">
-                <div className="text-sm font-medium text-slate-700">{userName}</div>
-                <div className="text-xs text-slate-500">{userEmail}</div>
+            ) : (
+              <>
+                <UploadCloud className="h-7 w-7 text-slate-400" />
+                <div className="text-sm text-slate-600">
+                  <span className="font-medium text-teal-700">Click to browse</span> or drag
+                  &amp; drop PDFs
+                </div>
+              </>
+            )}
+          </label>
+
+          {files.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
+                <div className="min-w-0 text-xs font-medium text-slate-500">
+                  {files.length} selected ({formatBytes(selectedBytes)})
+                </div>
+                <button
+                  type="button"
+                  onClick={clearFiles}
+                  className="rounded-md px-2 py-1 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                >
+                  Clear
+                </button>
               </div>
+              <ul className="scrollbar-thin max-h-40 divide-y divide-slate-100 overflow-y-auto">
+                {files.map((selected, index) => (
+                  <li
+                    key={`${selected.name}-${selected.size}-${selected.lastModified}-${index}`}
+                    className="flex items-center gap-2 px-3 py-2 text-sm"
+                  >
+                    <FileText className="h-4 w-4 shrink-0 text-teal-600" />
+                    <span className="min-w-0 flex-1 truncate font-medium text-slate-700">
+                      {selected.name}
+                    </span>
+                    <span className="shrink-0 text-xs text-slate-500">
+                      {formatBytes(selected.size)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(index)}
+                      aria-label={`Remove ${selected.name}`}
+                      title={`Remove ${selected.name}`}
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <button
-              onClick={onSignOut}
-              aria-label="Sign out"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label
+              className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600"
+              title="Always run a fresh extraction even if this file was processed before"
             >
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Sign out</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                checked={bypassCache}
+                onChange={(e) => setBypassCache(e.target.checked)}
+              />
+              Bypass cache
+            </label>
+            <button type="submit" disabled={uploading || files.length === 0} className="btn btn-primary">
+              {uploading ? <Loader className="h-4 w-4" /> : <UploadCloud className="h-4 w-4" />}
+              {uploading ? "Uploading..." : uploadButtonLabel}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* Recent documents (a short preview — the full, filterable list is /dashboard/documents) */}
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-900">Recent documents</h2>
+          <div className="flex items-center gap-3">
+            {isProcessing && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600">
+                <Loader className="h-3.5 w-3.5" />
+                processing…
+              </span>
+            )}
+            <button onClick={() => void refreshAll()} className="btn btn-secondary btn-sm">
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
             </button>
           </div>
         </div>
-      </header>
 
-      <main className="mx-auto max-w-6xl space-y-6 px-5 py-8">
-        {/* Stats */}
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Documents" value={stats.total} />
-          <StatCard label="Completed" value={stats.completed} accent="emerald" />
-          <StatCard label="Records extracted" value={stats.records} accent="teal" />
-          <StatCard label="Needs review" value={stats.flagged} accent="amber" />
-        </section>
+        <p className="sr-only" role="status" aria-live="polite">
+          {loading
+            ? "Loading documents."
+            : `${cards.total} document${cards.total === 1 ? "" : "s"}, ${summary?.processing ?? 0} processing, ${cards.flagged} needing review.`}
+        </p>
 
-        {/* Upload */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-900">Upload a billing PDF</h2>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Processed asynchronously by the extraction agent. Results are visible only
-            to your account.
+        {loadError && (
+          <p
+            role="alert"
+            className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+          >
+            {loadError}
           </p>
+        )}
 
-          <form onSubmit={onUpload} className="mt-4 space-y-3">
-            <label
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragging(false);
-                pickFile(e.dataTransfer.files?.[0] ?? null);
-              }}
-              className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-500/30 ${
-                dragging
-                  ? "border-teal-400 bg-teal-50"
-                  : "border-slate-300 bg-slate-50 hover:border-slate-400 hover:bg-slate-100/60"
-              }`}
-            >
-              {/* sr-only (not hidden) so the input stays keyboard-focusable; the
-                  label's focus-within ring surfaces that focus on the dropzone. */}
-              <input
-                ref={fileRef}
-                type="file"
-                accept="application/pdf,.pdf"
-                className="sr-only"
-                onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
-              />
-              {file ? (
-                <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
-                  <FileText className="h-4 w-4 text-teal-600" />
-                  <span className="font-medium text-slate-800">{file.name}</span>
-                  <span className="text-slate-500">{formatBytes(file.size)}</span>
-                </div>
-              ) : (
-                <>
-                  <UploadCloud className="h-7 w-7 text-slate-400" />
-                  <div className="text-sm text-slate-600">
-                    <span className="font-medium text-teal-600">Click to browse</span>{" "}
-                    or drag &amp; drop a PDF
-                  </div>
-                </>
-              )}
-            </label>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <label
-                className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600"
-                title="Always run a fresh extraction even if this file was processed before"
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                  checked={bypassCache}
-                  onChange={(e) => setBypassCache(e.target.checked)}
-                />
-                Bypass cache
-              </label>
-              <button
-                type="submit"
-                disabled={uploading || !file}
-                className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {uploading ? <Loader className="h-4 w-4" /> : <UploadCloud className="h-4 w-4" />}
-                {uploading ? "Uploading…" : "Upload & extract"}
-              </button>
-            </div>
-            {uploadError && (
-              <p role="alert" className="text-sm text-red-600">
-                {uploadError}
-              </p>
-            )}
-          </form>
-        </section>
-
-        {/* Jobs */}
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">Recent jobs</h2>
-            <div className="flex items-center gap-3">
-              {isProcessing && (
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600">
-                  <Loader className="h-3.5 w-3.5" />
-                  processing…
-                </span>
-              )}
-              <button
-                onClick={() => void refresh()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Refresh
-              </button>
+        {loading ? (
+          <div className="space-y-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="skeleton h-16 rounded-xl" />
+            ))}
+          </div>
+        ) : jobs.length === 0 ? (
+          <div className="grid place-items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
+            <span className="mb-3 grid h-12 w-12 place-items-center rounded-full bg-slate-100 text-slate-400">
+              <Inbox className="h-6 w-6" />
+            </span>
+            <div className="text-sm font-medium text-slate-700">No documents yet</div>
+            <div className="mt-1 text-sm text-slate-500">
+              Upload a billing PDF above to extract its records.
             </div>
           </div>
-
-          {/* Visually-hidden live region so AT users hear job progress as the
-              list polls (uploads completing, processing finishing). */}
-          <p className="sr-only" role="status" aria-live="polite">
-            {loading
-              ? "Loading jobs."
-              : `${stats.total} document${stats.total === 1 ? "" : "s"}, ${stats.completed} completed, ${stats.live} processing, ${stats.flagged} needing review.`}
-          </p>
-
-          {loadError && (
-            <p
-              role="alert"
-              className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-            >
-              {loadError}
-            </p>
-          )}
-
-          {loading ? (
-            <div className="space-y-3">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="skeleton h-16 rounded-xl" />
-              ))}
-            </div>
-          ) : jobs.length === 0 ? (
-            <div className="grid place-items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
-              <Inbox className="mb-3 h-9 w-9 text-slate-300" />
-              <div className="text-sm font-medium text-slate-700">No documents yet</div>
-              <div className="mt-1 text-sm text-slate-500">
-                Upload a billing PDF above to extract its records.
-              </div>
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {jobs.map((job) => (
+        ) : (
+          <>
+            <ul className="space-y-2.5">
+              {recent.map((job) => (
                 <JobCard key={job.job_id} job={job} onCancel={onCancel} />
               ))}
             </ul>
-          )}
-        </section>
-
-        <footer className="flex items-center justify-center gap-1.5 pt-2 text-xs text-slate-500">
-          <CheckCircle className="h-3.5 w-3.5" />
-          Per-account isolation enforced at the database (RLS)
-        </footer>
-      </main>
-    </div>
+            {cards.total > recent.length && (
+              <Link
+                href="/dashboard/documents"
+                className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 transition hover:gap-2.5 hover:text-teal-800"
+              >
+                View all {cards.total} documents
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            )}
+          </>
+        )}
+      </section>
+    </>
   );
 }
+
+const STAT_TONES: Record<string, { value: string; chip: string }> = {
+  slate: { value: "text-slate-900", chip: "bg-slate-100 text-slate-600" },
+  emerald: { value: "text-emerald-600", chip: "bg-emerald-50 text-emerald-600" },
+  teal: { value: "text-teal-600", chip: "bg-teal-50 text-teal-600" },
+  amber: { value: "text-amber-600", chip: "bg-amber-50 text-amber-600" },
+};
 
 function StatCard({
   label,
   value,
   accent = "slate",
+  href,
+  Icon,
 }: {
   label: string;
   value: number;
   accent?: "slate" | "emerald" | "teal" | "amber";
+  href?: string;
+  Icon: (p: { className?: string }) => React.ReactElement;
 }) {
-  const accents: Record<string, string> = {
-    slate: "text-slate-900",
-    emerald: "text-emerald-600",
-    teal: "text-teal-600",
-    amber: "text-amber-600",
-  };
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="text-xs font-medium text-slate-500">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums ${accents[accent]}`}>
-        {value.toLocaleString()}
+  const tone = STAT_TONES[accent];
+  const body = (
+    <div className="flex items-center gap-3">
+      <span
+        className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${tone.chip}`}
+      >
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <div className="truncate text-xs font-medium text-slate-500">{label}</div>
+        <div className={`text-xl font-semibold tabular-nums ${tone.value}`}>
+          {value.toLocaleString()}
+        </div>
       </div>
     </div>
   );
+  if (href) {
+    return (
+      <Link href={href} className="card-link block px-4 py-3.5">
+        {body}
+      </Link>
+    );
+  }
+  return <div className="card px-4 py-3.5">{body}</div>;
 }

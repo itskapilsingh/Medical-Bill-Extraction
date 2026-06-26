@@ -93,6 +93,15 @@ export const Inbox = (p: IconProps) => (
   </svg>
 );
 
+export const LayoutGrid = (p: IconProps) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="3" width="7" height="7" rx="1" />
+    <rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" />
+    <rect x="14" y="14" width="7" height="7" rx="1" />
+  </svg>
+);
+
 export const Bolt = (p: IconProps) => (
   <svg {...base} {...p}>
     <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z" />
@@ -137,5 +146,18 @@ export const Sparkles = (p: IconProps) => (
   <svg {...base} {...p}>
     <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
     <path d="M6.3 6.3 9 9M15 15l2.7 2.7M17.7 6.3 15 9M9 15l-2.7 2.7" />
+  </svg>
+);
+
+export const Info = (p: IconProps) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5M12 8h.01" />
+  </svg>
+);
+
+export const X = (p: IconProps) => (
+  <svg {...base} {...p}>
+    <path d="M18 6 6 18M6 6l12 12" />
   </svg>
 );

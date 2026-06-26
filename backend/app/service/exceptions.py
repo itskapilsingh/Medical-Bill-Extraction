@@ -15,11 +15,15 @@ class BaseServiceException(Exception):
         error_code: int,
         http_status: HTTPStatus = HTTPStatus.INTERNAL_SERVER_ERROR,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.message = message
         self.error_code = error_code
         self.http_status = http_status
         self.details = details or {}
+        # Extra response headers (e.g. Retry-After on a 429). Applied by the
+        # FastAPI exception handler.
+        self.headers = headers or {}
         super().__init__(message)
 
     def to_dict(self) -> dict[str, Any]:
@@ -59,6 +63,24 @@ class PayloadTooLargeException(BaseServiceException):
             error_code=4130,
             http_status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
             details={"max_bytes": max_bytes},
+        )
+
+
+class RateLimitExceededException(BaseServiceException):
+    """429 raised by the per-user upload rate limiter.
+
+    Carries a ``Retry-After`` header (seconds) so a well-behaved client knows when
+    its budget refills. Maps to OWASP API4:2023 (Unrestricted Resource
+    Consumption) / LLM10 (Unbounded Consumption) / CWE-770.
+    """
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__(
+            message="Rate limit exceeded. Please retry later.",
+            error_code=4290,
+            http_status=HTTPStatus.TOO_MANY_REQUESTS,
+            details={"retry_after_seconds": retry_after_seconds},
+            headers={"Retry-After": str(retry_after_seconds)},
         )
 
 

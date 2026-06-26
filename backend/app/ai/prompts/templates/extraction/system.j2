@@ -5,6 +5,9 @@ outcome; a clearly flagged uncertain one is acceptable.
 
 Produce one structured row per BILLING EPISODE — typically one provider claim,
 one pharmacy fill-range, or one billing period — NOT one row per itemized line.
+When a PDF contains multiple invoices/statements/bills, keep them separated by
+`invoice_number`: every row from the same invoice gets the same identifier, and
+rows from different invoice numbers must not be merged.
 
 ## How to read the document
 The document is mostly noise (cover sheets, certifications, lab reports,
@@ -21,6 +24,8 @@ prescriptions). Work in this order:
 
 MEDICAL BILLING LEDGER ("Billing Summary", grouped by "Claim ID"):
 - One output row per Claim ID.
+- `invoice_number`: use the visible Claim ID, invoice number, statement number,
+  bill number, or account number that identifies the claim/statement group.
 - `treatment_date`: the date of SERVICE for that claim (not the post/payment date).
 - `cpt_codes`: every procedure code in that claim group.
 - Amounts come from the claim's "Claim Total:" line, which lists four numbers in
@@ -29,26 +34,44 @@ MEDICAL BILLING LEDGER ("Billing Summary", grouped by "Claim ID"):
   unless a distinct patient payment (not the balance) is shown.
 - `provider`: the practice/facility named at the top of the ledger — never the
   supervising physician.
-- `insurers`: the plan name(s) (e.g. "Molina Healthcare").
+- `insurers`: the plan name(s) exactly as shown in the document.
+- If both a HICFA / CMS-1500 claim form and a billing ledger describe the same
+  episode, treat the LEDGER as the source of truth for amounts, dates, and
+  identifiers; use the HICFA form only to fill values the ledger does not provide.
 
 PHARMACY LEDGER (columns RX #, FILL DATE, NDC, CHARGE, INS PD, COPAY, 3RD PARTY):
 - One single aggregate row for the whole pharmacy.
+- `invoice_number`: use the visible invoice, statement, bill, or account number
+  for that pharmacy ledger. If the ledger only has RX/NDC numbers and no
+  invoice-like document identifier, leave it null; never use RX or NDC as the
+  invoice number.
 - Prefer the "TOTALS:" summary line: charges -> `total_charges`, INS PD ->
   `ins_paid`, COPAY -> `payments`. If there is no totals line, sum the columns.
 - `treatment_date`: the full fill-date range (earliest – latest).
 - `third_parties`: the DISTINCT names in the 3RD PARTY column (PBMs, discount
-  programs — Caremark, OptumRx, GoodRx, etc.). These are NOT insurers.
+  programs, assistance programs, or other non-insurance payers). These are NOT
+  insurers.
 - `cpt_codes`: empty (never use NDC or RX numbers). `provider`: the pharmacy name.
   `insurers`: usually empty.
 - `adjustment`: when the account is fully settled (balance 0) and total charges
   EXCEED insurer paid + patient paid, the difference is a contractual
   adjustment/write-off — record it as `adjustment`. (If charges equal insurer +
   patient, there is no adjustment; leave it null.)
+- Some pharmacy systems use TP / PT columns instead of INS PD / COPAY: `PT Paid`
+  (a.k.a. "PT Pay") is the PATIENT payment -> `payments`, and `TP Paid` (a.k.a.
+  "TP Total") is a THIRD-PARTY payment — record that third party's NAME in
+  `third_parties` (it is not an insurer). When no "TOTALS:"/summary line gives the
+  charges, set `total_charges` = TP Paid + PT Paid and add a `low`/`medium`
+  `flagged` entry noting the total was derived by summing TP + PT (an assumption);
+  an explicit summary line overrides this.
 
 PERIOD / RECURRING BILLING (e.g. dialysis billed per date-range):
 - One row per billing period. `treatment_date` MUST be the period's full span,
   formatted "MM/DD/YYYY - MM/DD/YYYY" (first through last treatment date) — never
   just the first date. Amounts come from that period's total line.
+- `invoice_number`: use the period's invoice, statement, bill, claim, or account
+  identifier when shown. If one invoice covers multiple period rows, repeat that
+  same identifier on each row in that invoice.
 - `cpt_codes`: empty — even though the underlying treatment lines show
   procedure/HCPCS codes (J-codes, 90937, etc.), they belong to the individual
   treatments, not the period summary.
@@ -58,6 +81,11 @@ PERIOD / RECURRING BILLING (e.g. dialysis billed per date-range):
 ## Field rules
 - Leave a field null (or empty list) rather than guess. Never output "N/A",
   "Unknown", or "". A field explicitly zero is 0.0, not null.
+- `invoice_number`: preserve the exact visible identifier text and punctuation,
+  such as "INV-10422", "Statement # 44819", "Claim ID 90210", or "Account
+  12345". Do not normalize, sequence, or fabricate invoice numbers. If multiple
+  invoice numbers appear in one PDF, use the page headers/section boundaries to
+  assign each billing row to the correct invoice number.
 - Insurer vs third party are separate buckets — never merge them.
 - `provider`: the facility/pharmacy in normal Title Case (e.g. "Wilson Medical
   Pharmacy"), NOT an ALL-CAPS page header and NOT the records custodian on the
@@ -70,12 +98,10 @@ PERIOD / RECURRING BILLING (e.g. dialysis billed per date-range):
   denotes a period summary, and its procedure codes belong to the individual
   visits/treatments, not the summary row. CPT codes are only for single-date
   claims.
-- Payer and third-party NAMES often wrap across two lines in a table cell (e.g.
-  "Omnisys" then "Immunizations" = "Omnisys Immunizations"; "McKesson" then
-  "Health PBM" = "McKesson Health PBM"). Reassemble the full name. Strip any
-  trailing payer code — a "(BIN 600099)" parenthetical, a "(USFLU)", or a bare
-  code suffix — keep only the name (e.g. "Allwin", not "Allwin USFLU"). List each
-  distinct payer exactly once, and do not drop any.
+- Payer and third-party NAMES often wrap across two lines in a table cell.
+  Reassemble the full visible name in reading order. Strip trailing payer codes,
+  BIN parentheticals, program-code suffixes, or bare code suffixes; keep only the
+  payer name. List each distinct payer exactly once, and do not drop any.
 - `payments` is ONLY a real patient/out-of-pocket payment that is shown. If no
   patient payment appears, leave it null — never infer 0.0 for payments.
 - `balance`: if charges are fully accounted for by insurer + patient payments

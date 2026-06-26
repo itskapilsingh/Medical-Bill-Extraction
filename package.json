@@ -1,0 +1,15 @@
+{
+  "name": "medical-billing-records-assignment-package",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Full-stack medical billing extraction take-home: a multi-user platform where an authenticated user uploads PDFs and an async pipeline extracts structured billing records scoped strictly to that user. The full specification lives in **[ASSIGNMENT.md](ASSIGNMENT.md)**; read it first.",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "npm --prefix frontend run test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED"
+}

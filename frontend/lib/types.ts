@@ -9,6 +9,7 @@ export type JobStatus =
   | "cancelled";
 
 export interface BillingRecord {
+  invoice_number: string | null;
   treatment_date: string;
   cpt_codes: string[];
   description: string | null;

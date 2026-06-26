@@ -17,6 +17,7 @@ Create Date: 2026-06-22
 
 """
 import os
+import re
 from typing import Sequence, Union
 
 from alembic import op
@@ -27,39 +28,48 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 APP_ROLE = "billing_app"
-# Operator-controlled (migration-time), not user input. Default preserves the
-# existing local credential so a no-config boot behaves exactly as before.
 APP_PASSWORD = os.environ.get("APP_DB_PASSWORD", "billing_app")
 DB_NAME = os.environ.get("POSTGRES_DB", "billing")
 
+_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _ident(value: str) -> str:
+    if not _IDENT.fullmatch(value):
+        raise ValueError(f"Unsafe PostgreSQL identifier: {value!r}")
+    return value
+
+
+def _literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
 
 def upgrade() -> None:
+    role = _ident(APP_ROLE)
+    db_name = _ident(DB_NAME)
+    password = _literal(APP_PASSWORD)
+    role_literal = _literal(role)
+
     # Create the login role if it does not already exist (roles survive across
     # database drops within a cluster, so CREATE ROLE must be guarded).
     op.execute(
         f"""
         DO $$
         BEGIN
-            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN
-                CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_PASSWORD}';
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = {role_literal}) THEN
+                CREATE ROLE {role} LOGIN PASSWORD {password};
             END IF;
         END
         $$;
         """
     )
 
-    # Baseline connect/usage only. Object-level privileges are granted explicitly
-    # per table in the migration that creates (or owns) that table, so the role
-    # gets exactly what it needs and no more — full DML on jobs, read-only on the
-    # auth tables it validates against. We deliberately avoid a blanket
-    # ALTER DEFAULT PRIVILEGES, which would silently hand the app role write
-    # access to the Better Auth tables too.
-    op.execute(f"GRANT CONNECT ON DATABASE {DB_NAME} TO {APP_ROLE};")
-    op.execute(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE};")
+    op.execute(f"GRANT CONNECT ON DATABASE {db_name} TO {role};")
+    op.execute(f"GRANT USAGE ON SCHEMA public TO {role};")
 
 
 def downgrade() -> None:
-    op.execute(f"REVOKE USAGE ON SCHEMA public FROM {APP_ROLE};")
-    op.execute(f"REVOKE CONNECT ON DATABASE {DB_NAME} FROM {APP_ROLE};")
-    # The role itself is intentionally left in place on downgrade; dropping a role
-    # that may own privileges elsewhere is unsafe to do blindly.
+    role = _ident(APP_ROLE)
+    db_name = _ident(DB_NAME)
+    op.execute(f"REVOKE USAGE ON SCHEMA public FROM {role};")
+    op.execute(f"REVOKE CONNECT ON DATABASE {db_name} FROM {role};")

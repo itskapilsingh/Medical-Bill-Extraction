@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.ai.agents.extraction.executor import ExtractionAgentExecutor
 from app.ai.config import EXTRACTION_AGENT_CONFIG
 from app.ai.context import RunContext
+from app.ai.deterministic_extractor import try_deterministic_extract
 from app.ai.metrics import usage_to_token_dict
 from app.ai.pricing import estimate_cost_usd
 from app.models.extraction import ExtractionOutput
@@ -32,6 +33,16 @@ class ExtractionOrchestrator:
 
     async def run(self, ctx: RunContext) -> OrchestratorResult:
         t_start = time.perf_counter()
+
+        deterministic = try_deterministic_extract(ctx.document)
+        if deterministic is not None:
+            return OrchestratorResult(
+                extraction=deterministic,
+                model="deterministic",
+                token_usage={},
+                cost_usd=0.0,
+                agent_seconds=round(time.perf_counter() - t_start, 3),
+            )
 
         output, usage = await ExtractionAgentExecutor().run(ctx)
 

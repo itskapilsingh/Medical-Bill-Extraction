@@ -24,7 +24,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hint, setHint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const isSignup = mode === "signup";
@@ -53,7 +52,6 @@ export default function LoginPage() {
   function switchMode() {
     setMode(isSignup ? "signin" : "signup");
     setError(null);
-    setHint(null);
   }
 
   return (
@@ -165,28 +163,6 @@ export default function LoginPage() {
                 </div>
               </Field>
 
-              {!isSignup && (
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setHint("Password reset isn't enabled in this demo — sign up a new account instead.")
-                    }
-                    className="text-xs font-medium text-slate-500 hover:text-slate-700"
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-              )}
-
-              {/* Persistent live region (kept mounted so AT reliably announces
-                  the hint when it appears); collapses to sr-only when empty. */}
-              <p
-                aria-live="polite"
-                className={hint ? "text-xs text-slate-500" : "sr-only"}
-              >
-                {hint}
-              </p>
               {error && (
                 <p
                   role="alert"
@@ -200,7 +176,7 @@ export default function LoginPage() {
                 type="submit"
                 disabled={busy}
                 aria-busy={busy}
-                className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-teal-600 to-teal-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:from-teal-700 hover:to-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn btn-primary h-11 w-full"
               >
                 {busy ? (
                   <>

@@ -15,6 +15,15 @@ Severity = Literal["low", "medium", "high"]
 class BillingRecord(BaseModel):
     """One billing episode row in the extraction result."""
 
+    invoice_number: str | None = Field(
+        default=None,
+        description=(
+            "Invoice, statement, bill, claim, or account identifier that groups this "
+            "billing episode within the PDF. Preserve the exact identifier text as "
+            "shown, without inventing one. Use null when no invoice-like identifier "
+            "is visible for the episode."
+        ),
+    )
     treatment_date: str = Field(
         description=(
             "Date or date range for the service or fill, as shown on the bill "
@@ -92,7 +101,8 @@ class FlaggedRecord(BaseModel):
         default_factory=list,
         description=(
             "Names of ``BillingRecord`` fields affected by this issue (e.g. "
-            "``total_charges``, ``ins_paid``). Empty if not field-specific."
+            "``invoice_number``, ``total_charges``, ``ins_paid``). Empty if not "
+            "field-specific."
         ),
     )
     reason: str = Field(

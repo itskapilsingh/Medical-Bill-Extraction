@@ -3,7 +3,7 @@
 This document describes extraction output and the job API envelope. **Field meanings for**
 **`BillingRecord` and `FlaggedRecord` are defined in code** — each attribute uses Pydantic
 `Field(..., description=...)` in
-[`app/models/extraction.py`](../app/models/extraction.py). Read that file (or generate /
+[`backend/app/models/extraction.py`](../backend/app/models/extraction.py). Read that file (or generate /
 inspect the JSON Schema from the models) for the authoritative descriptions.
 
 Output that does not conform scores zero for that record.
@@ -53,10 +53,11 @@ These job-level fields should match what you store on the job row and return fro
 
 One output row per provider episode. **Each field’s meaning is the Pydantic**
 `Field(..., description=...)` **on that attribute in**
-[`BillingRecord`](../app/models/extraction.py).
+[`BillingRecord`](../backend/app/models/extraction.py).
 
 ```json
 {
+  "invoice_number": "INV-10422",
   "treatment_date": "03/16/2017 – 03/20/2017",
   "cpt_codes": ["99221", "99456"],
   "description": "Inpatient hospital services",
@@ -78,7 +79,7 @@ One output row per provider episode. **Each field’s meaning is the Pydantic**
 
 Material that could not be extracted with enough confidence must appear here, not be
 dropped. **Each field’s meaning is the Pydantic** `Field(..., description=...)` **on**
-[`FlaggedRecord`](../app/models/extraction.py).
+[`FlaggedRecord`](../backend/app/models/extraction.py).
 
 ```json
 {

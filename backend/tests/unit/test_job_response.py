@@ -30,6 +30,7 @@ def test_records_and_flagged_are_lifted_from_result():
         result={
             "records": [
                 {
+                    "invoice_number": "INV-100",
                     "treatment_date": "01/04/2024",
                     "cpt_codes": ["99213"],
                     "provider": "Newton Rehabilitation Center",
@@ -57,6 +58,7 @@ def test_records_and_flagged_are_lifted_from_result():
     assert resp.job_id == "job-1"
     assert resp.status == "completed"
     assert len(resp.records) == 1
+    assert resp.records[0].invoice_number == "INV-100"
     assert resp.records[0].provider == "Newton Rehabilitation Center"
     assert resp.records[0].cpt_codes == ["99213"]
     assert len(resp.flagged) == 1

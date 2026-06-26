@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from logging.config import fileConfig
 
 from alembic import context
@@ -14,6 +15,27 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+
+_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_migration_env() -> None:
+    """Defense-in-depth validation of operator-supplied migration env values.
+
+    The role bootstrap migrations now escape their own identifiers and literals
+    (see a1771a9c2e01 / a6f2c9d8e3b1), so a quote in a password no longer breaks
+    the generated SQL. This remains as a belt-and-suspenders guard that fails fast
+    on values unusual for a bootstrap role; prefer URL-safe/hex DB passwords.
+    """
+    for name in ("POSTGRES_DB",):
+        value = os.environ.get(name)
+        if value and not _IDENT.fullmatch(value):
+            raise RuntimeError(f"{name} must be a simple PostgreSQL identifier")
+
+    for name in ("APP_DB_PASSWORD",):
+        value = os.environ.get(name)
+        if value and any(ch in value for ch in ("'", "\n", "\r", ";")):
+            raise RuntimeError(f"{name} contains characters unsafe for bootstrap SQL")
 
 
 def get_url() -> str:
@@ -63,6 +85,7 @@ async def run_migrations_online() -> None:
 
 
 def run() -> None:
+    _validate_migration_env()
     if context.is_offline_mode():
         run_migrations_offline()
     else:

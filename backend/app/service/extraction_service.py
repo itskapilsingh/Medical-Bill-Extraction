@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Awaitable, Callable
 from time import perf_counter
 
 from app.ai.config import EXTRACTION_AGENT_CONFIG
 from app.ai.context import RunContext
 from app.ai.metrics import usage_from_exception, usage_to_token_dict
 from app.ai.orchestrator import ExtractionOrchestrator, OrchestratorResult
-from app.ai.pdf_loader import load_document
+from app.ai.pdf_loader import VisionExtractionRequired, load_document
+from app.ai.pdf_vision_extractor import PdfVisionExtractor
 from app.ai.pricing import estimate_cost_usd
 from app.ai.retry import is_transient
 from app.config.settings import get_settings
@@ -75,15 +77,56 @@ class ExtractionService(BaseService):
                 self.logger.warning("process_job_not_visible", job_id=job_id)
                 return
 
-            # Parse off the event loop (pdfplumber is sync) and bound it: a hostile
-            # or huge PDF cannot pin the worker indefinitely.
-            document = await asyncio.wait_for(
-                asyncio.to_thread(
-                    load_document, job["pdf_path"], job_id, self.pdf_max_pages
-                ),
-                timeout=self.pdf_parse_timeout,
-            )
-            result = await self._run_with_retries(RunContext(document=document), job_id)
+            content_hash = job.get("content_hash")
+            if content_hash:
+                cached = await self.job_dao.find_cached_result(content_hash)
+                if cached is not None and cached["id"] != job_id:
+                    duration = round(perf_counter() - start, 3)
+                    updated = await self.job_dao.update_status(
+                        job_id,
+                        "completed",
+                        result=cached["result"],
+                        token_usage=cached["token_usage"],
+                        cost_usd=cached["cost_usd"],
+                        processing_duration_seconds=duration,
+                        expected_status="processing",
+                        expected_attempts=expected_attempts,
+                    )
+                    if updated is None:
+                        self.logger.warning(
+                            "terminal_write_skipped",
+                            job_id=job_id,
+                            intended="completed",
+                            reason="job no longer in processing (recovered or re-claimed)",
+                        )
+                        return
+                    self._delete_pdf(job_id, job["pdf_path"])
+                    self.logger.info(
+                        "job_completed_from_cache", job_id=job_id, source_job=cached["id"]
+                    )
+                    return
+
+            try:
+                document = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        load_document, job["pdf_path"], job_id, self.pdf_max_pages
+                    ),
+                    timeout=self.pdf_parse_timeout,
+                )
+            except VisionExtractionRequired as exc:
+                self.logger.info(
+                    "pdf_vision_fallback_required",
+                    job_id=job_id,
+                    pages=exc.pages,
+                    reason=str(exc),
+                )
+                result = await self._run_pdf_vision_with_retries(
+                    job["pdf_path"], job_id
+                )
+            else:
+                result = await self._run_with_retries(
+                    RunContext(document=document), job_id
+                )
             duration = round(perf_counter() - start, 3)
 
             updated = await self.job_dao.update_status(
@@ -107,8 +150,6 @@ class ExtractionService(BaseService):
                     reason="job no longer in processing (recovered or re-claimed)",
                 )
                 return
-            # PHI minimization: the structured result is persisted; the raw PDF
-            # is no longer needed, so drop it from the shared volume.
             self._delete_pdf(job_id, job["pdf_path"])
             self.logger.info(
                 "job_completed",
@@ -182,6 +223,22 @@ class ExtractionService(BaseService):
     async def _run_with_retries(
         self, ctx: RunContext, job_id: str
     ) -> OrchestratorResult:
+        return await self._run_operation_with_retries(
+            lambda: ExtractionOrchestrator().run(ctx), job_id
+        )
+
+    async def _run_pdf_vision_with_retries(
+        self, pdf_path: str, job_id: str
+    ) -> OrchestratorResult:
+        return await self._run_operation_with_retries(
+            lambda: PdfVisionExtractor().run(pdf_path=pdf_path, job_id=job_id), job_id
+        )
+
+    async def _run_operation_with_retries(
+        self,
+        operation: Callable[[], Awaitable[OrchestratorResult]],
+        job_id: str,
+    ) -> OrchestratorResult:
         """Run the orchestrator, retrying transient failures with exp. backoff.
 
         Fatal (non-transient) errors propagate immediately. When all attempts are
@@ -194,7 +251,7 @@ class ExtractionService(BaseService):
                 # Bound the model call: a hung request can't hold the worker until
                 # the stall-recovery timer. A timeout is transient -> retried below.
                 return await asyncio.wait_for(
-                    ExtractionOrchestrator().run(ctx), timeout=self.extraction_timeout
+                    operation(), timeout=self.extraction_timeout
                 )
             except Exception as exc:
                 last_exc = exc

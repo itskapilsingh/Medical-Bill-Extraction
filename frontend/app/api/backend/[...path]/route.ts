@@ -6,11 +6,49 @@ import { auth } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// Inside Docker the API is reachable at http://api:8000; locally, override via env.
-const API_BASE = process.env.API_INTERNAL_URL ?? "http://api:8000";
+function requireEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value.replace(/\/+$/, "");
+}
+
+const API_BASE = requireEnv("API_INTERNAL_URL");
 
 // Reject oversized bodies before buffering them (the API enforces the real cap).
 const MAX_BODY_BYTES = 26 * 1024 * 1024; // ~25 MB + multipart overhead
+
+async function readLimitedBody(req: NextRequest): Promise<ArrayBuffer | Response | undefined> {
+  const declared = Number(req.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    return Response.json({ message: "Upload too large" }, { status: 413 });
+  }
+  if (!req.body) {
+    return undefined;
+  }
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BODY_BYTES) {
+      await reader.cancel();
+      return Response.json({ message: "Upload too large" }, { status: 413 });
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body.buffer;
+}
 
 /**
  * Backend-for-frontend proxy.
@@ -46,11 +84,9 @@ async function proxy(
     headers: forwardHeaders,
   };
   if (req.method !== "GET" && req.method !== "HEAD") {
-    const declared = Number(req.headers.get("content-length") ?? "0");
-    if (declared > MAX_BODY_BYTES) {
-      return Response.json({ message: "Upload too large" }, { status: 413 });
-    }
-    init.body = await req.arrayBuffer();
+    const body = await readLimitedBody(req);
+    if (body instanceof Response) return body;
+    init.body = body;
     init.duplex = "half";
   }
 
@@ -66,6 +102,9 @@ async function proxy(
   const responseHeaders = new Headers();
   const upstreamType = upstream.headers.get("content-type");
   if (upstreamType) responseHeaders.set("content-type", upstreamType);
+  // Pass through Retry-After so the client can tell the user when to retry (429).
+  const retryAfter = upstream.headers.get("retry-after");
+  if (retryAfter) responseHeaders.set("retry-after", retryAfter);
 
   return new Response(upstream.body, {
     status: upstream.status,

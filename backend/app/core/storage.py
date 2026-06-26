@@ -36,16 +36,20 @@ class PdfStorage:
         """SHA-256 of the file bytes — the content identity used for caching."""
         return hashlib.sha256(data).hexdigest()
 
+    def validate(self, data: bytes) -> None:
+        """Validate that ``data`` looks like a PDF before it is persisted."""
+        if not data:
+            raise InvalidPdfError("Uploaded file is empty.")
+        if not data.startswith(PDF_MAGIC):
+            raise InvalidPdfError("Uploaded file is not a PDF (missing %PDF header).")
+
     def save(self, *, owner_id: str, data: bytes) -> tuple[str, str]:
         """Persist ``data`` for ``owner_id``. Returns ``(absolute_path, sha256)``.
 
         Raises InvalidPdfError if the bytes are empty or do not start with the
         PDF magic number.
         """
-        if not data:
-            raise InvalidPdfError("Uploaded file is empty.")
-        if not data.startswith(PDF_MAGIC):
-            raise InvalidPdfError("Uploaded file is not a PDF (missing %PDF header).")
+        self.validate(data)
 
         digest = self.fingerprint(data)
         owner_dir = self._root / self._safe(owner_id)
@@ -53,3 +57,27 @@ class PdfStorage:
         path = owner_dir / f"{uuid.uuid4().hex}.pdf"
         path.write_bytes(data)
         return str(path), digest
+
+    def delete(self, pdf_path: str | None) -> bool:
+        """Delete one stored PDF if it is inside the configured mount.
+
+        Returns True when a file was removed. Missing files are treated as a
+        successful no-op. A path outside the mount is rejected instead of blindly
+        unlinking it; callers may pass DB values, so keep the filesystem boundary
+        explicit.
+        """
+        if not pdf_path:
+            return False
+
+        root = self._root.resolve()
+        path = Path(pdf_path).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise InvalidPdfError("Refusing to delete a PDF outside the storage root.") from exc
+
+        try:
+            path.unlink()
+            return True
+        except FileNotFoundError:
+            return False

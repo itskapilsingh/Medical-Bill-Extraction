@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
+import { DashboardShell } from "@/components/dashboard-shell";
 import DashboardClient from "./dashboard-client";
 
 export const dynamic = "force-dynamic";
@@ -12,9 +13,11 @@ export default async function DashboardPage() {
     redirect("/login");
   }
   return (
-    <DashboardClient
-      userEmail={session.user.email}
+    <DashboardShell
       userName={session.user.name ?? session.user.email}
-    />
+      userEmail={session.user.email}
+    >
+      <DashboardClient />
+    </DashboardShell>
   );
 }

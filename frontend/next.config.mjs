@@ -1,15 +1,14 @@
 /** @type {import('next').NextConfig} */
 
 // Same-origin by default. 'unsafe-inline' is required for Next's hydration
-// bootstrap + Tailwind inline styles without a nonce-injecting middleware; the
-// font CDN is explicitly allowlisted. Tighten script-src to a nonce in a
-// hardened deployment.
+// bootstrap + Tailwind inline styles without a nonce-injecting middleware.
+// Tighten script-src to a nonce in a hardened deployment.
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
-  "font-src 'self' https://fonts.cohere.com data:",
+  "font-src 'self' data:",
   "connect-src 'self'",
   "frame-ancestors 'none'",
   "base-uri 'self'",

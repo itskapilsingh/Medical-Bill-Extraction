@@ -19,3 +19,5 @@ os.environ.setdefault(
     "postgresql+asyncpg://billing_app:billing_app@localhost:5432/billing",
 )
 os.environ.setdefault("BETTER_AUTH_SECRET", "test-secret-do-not-use-in-prod")
+os.environ.setdefault("EXTRACTION_MODEL", "gpt-5.4-mini")
+os.environ.setdefault("PDF_FILE_EXTRACTION_MODEL", "gpt-5.4-mini")

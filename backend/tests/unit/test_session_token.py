@@ -37,8 +37,6 @@ def test_wrong_secret_is_rejected():
 
 
 def test_bare_token_passes_through():
-    # The BFF forwards the raw session.token (no signature). The DB lookup is the
-    # authority for these, so _unsign returns it unchanged.
     assert _unsign("rawTokenNoDot", SECRET) == "rawTokenNoDot"
 
 

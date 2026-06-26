@@ -1,21 +1,22 @@
 """Token-usage cost estimation.
 
-There are no hard cost targets this round, but the API must surface a ``cost_usd``
-per job "based on documented pricing assumptions" (ASSIGNMENT.md). These are the
-assumptions, in one place, easy to update.
+There are no hard cost targets this round, but the API must surface a
+``cost_usd`` per job "based on documented pricing assumptions" (ASSIGNMENT.md).
+The assumptions live in Settings so operators can update them by environment
+without changing code.
 
 Rates are USD per 1,000,000 tokens. Cached input tokens (when the provider
 reports them) are billed at the cheaper cached rate and subtracted from the
-billable input. If a model is unknown we fall back to the gpt-5.4-mini rates and
-still return a number rather than failing the job over pricing.
-
-NOTE: these figures are placeholders for this exercise — confirm against current
-provider pricing before relying on them in production.
+billable input. If a model is unknown we fall back to the configured
+gpt-5.4-mini rates and still return a number rather than failing the job over
+pricing. Update the ``LLM_PRICE_*`` env vars whenever provider pricing changes.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from app.config.settings import get_settings
 
 
 @dataclass(frozen=True)
@@ -25,24 +26,36 @@ class ModelPriceTable:
     output_per_1m: float
 
 
-# Assumed rates for the gpt-5.4 family (USD / 1M tokens).
-_PRICES: dict[str, ModelPriceTable] = {
-    "gpt-5.4": ModelPriceTable(1.25, 0.125, 10.0),
-    "gpt-5.4-mini": ModelPriceTable(0.25, 0.025, 2.0),
-    "gpt-5.4-nano": ModelPriceTable(0.05, 0.005, 0.40),
-}
-
-_DEFAULT = _PRICES["gpt-5.4-mini"]
+def _prices() -> dict[str, ModelPriceTable]:
+    settings = get_settings()
+    return {
+        "gpt-5.4": ModelPriceTable(
+            settings.LLM_PRICE_GPT_5_4_INPUT_PER_1M,
+            settings.LLM_PRICE_GPT_5_4_CACHED_INPUT_PER_1M,
+            settings.LLM_PRICE_GPT_5_4_OUTPUT_PER_1M,
+        ),
+        "gpt-5.4-mini": ModelPriceTable(
+            settings.LLM_PRICE_GPT_5_4_MINI_INPUT_PER_1M,
+            settings.LLM_PRICE_GPT_5_4_MINI_CACHED_INPUT_PER_1M,
+            settings.LLM_PRICE_GPT_5_4_MINI_OUTPUT_PER_1M,
+        ),
+        "gpt-5.4-nano": ModelPriceTable(
+            settings.LLM_PRICE_GPT_5_4_NANO_INPUT_PER_1M,
+            settings.LLM_PRICE_GPT_5_4_NANO_CACHED_INPUT_PER_1M,
+            settings.LLM_PRICE_GPT_5_4_NANO_OUTPUT_PER_1M,
+        ),
+    }
 
 
 def _resolve(model: str) -> ModelPriceTable:
     """Resolve a concrete model id to a price table (longest known prefix wins)."""
-    if model in _PRICES:
-        return _PRICES[model]
-    candidates = [k for k in _PRICES if model.startswith(k)]
+    prices = _prices()
+    if model in prices:
+        return prices[model]
+    candidates = [k for k in prices if model.startswith(k)]
     if candidates:
-        return _PRICES[max(candidates, key=len)]
-    return _DEFAULT
+        return prices[max(candidates, key=len)]
+    return prices["gpt-5.4-mini"]
 
 
 def estimate_cost_usd(

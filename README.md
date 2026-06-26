@@ -1,15 +1,15 @@
 # Medical Billing Records Platform
 
-Starter stack for the medical billing extraction take-home: a full-stack, multi-user
-platform where an authenticated user uploads PDFs and an async pipeline extracts structured
-billing records scoped strictly to that user. The full specification lives in
+Full-stack medical billing extraction take-home: a multi-user platform where an
+authenticated user uploads PDFs and an async pipeline extracts structured billing records
+scoped strictly to that user. The full specification lives in
 **[ASSIGNMENT.md](ASSIGNMENT.md)**; read it first.
 
 You are extending this starter into a system with three parts:
 
-- a Next.js web frontend with Better Auth for sign up, sign in, and sessions (you add this)
-- a Python/FastAPI API and async worker (provided, stubbed) that does the extraction
-- Postgres with Row-Level Security for per-user isolation (you design the policies)
+- a Next.js web frontend with Better Auth for sign up, sign in, and sessions
+- a Python/FastAPI API and async worker that run the extraction lifecycle
+- Postgres with Row-Level Security for per-user isolation
 
 > Per-user isolation must be enforced by RLS in the database, not by application-layer
 > `WHERE` clauses alone. See *The Backend Lever* in [ASSIGNMENT.md](ASSIGNMENT.md).
@@ -32,7 +32,7 @@ backend/         # Python API + worker (provided, stubbed) — see backend/READM
   Dockerfile     # uv sync + .venv (Python 3.12)
   main.py        # API entry (uvicorn)
   worker.py      # Background worker loop
-frontend/        # YOU BUILD THIS — Next.js + Better Auth (placeholder README inside)
+frontend/        # Next.js + Better Auth web app and same-origin BFF
 docs/            # domain.md, schema.md, design.md (assignment references)
 data/            # sample PDFs + ground truth (when shipped; git-ignored)
 docker-compose.yml   # whole stack: postgres + api + worker (+ your web service)
@@ -43,16 +43,13 @@ The whole stack still comes up from the repo root with one `docker compose up`. 
 containers the backend lives at `/app`, so paths are unchanged from a flat layout; the split
 is host-side only.
 
-## What is provided vs. what you build
+## What is implemented
 
-Provided (stubbed where noted): the Python API, worker, and Postgres, plus Alembic
-migrations, the Docker build, the AI `echo` demo, and `NotImplementedError` stubs for job
-lifecycle, extraction persistence, and worker claiming.
-
-You build: the Next.js frontend, the Better Auth integration, the RLS policies and the
-RLS-enforced application DB role, the identity plumbing that runs from auth through the API
-and database session down to the worker, and the extraction pipeline itself. Wire the
-frontend into `docker-compose.yml` so the whole stack still comes up with one command.
+Implemented: the Next.js frontend, Better Auth integration, auth-table-only DB role,
+RLS-enforced application DB role, identity plumbing from auth through API and database
+sessions, worker claim/recovery, extraction orchestration, scanned/image PDF fallback,
+caching, rate limits, upload resource bounds, and Docker Compose wiring for the full
+stack.
 
 ## Prerequisites
 
@@ -64,10 +61,10 @@ frontend into `docker-compose.yml` so the whole stack still comes up with one co
   # then set OPENAI_API_KEY (provided with this assignment) in .env
   ```
 
-  Every variable is documented in `.env.example`, including the two database identities
-  (an admin role for migrations and an RLS-enforced application role for the API and worker)
-  and a ready-to-use `BETTER_AUTH_SECRET` default. The Postgres and DB-role values work
-  as-is for local runs; only `OPENAI_API_KEY` must be filled in.
+  Every variable is documented in `.env.example`, including the three database identities:
+  an admin role for migrations, an RLS-enforced application role for the API and worker,
+  and an auth-table-only role for the Next.js Better Auth adapter. The Postgres and
+  DB-role values work as-is for local runs; only `OPENAI_API_KEY` must be filled in.
 
 ## Run with Docker Compose
 
@@ -87,6 +84,8 @@ PDF uploads use the Docker-managed `pdf_data` volume mounted at `/app/pdfs`, sha
 by the API and worker. It is a named volume (not a host bind mount) so it stays
 writable under the containers' non-root user and PHI never lands in the host working
 tree; the worker deletes each PDF once its job is done (see [SECURITY.md](SECURITY.md)).
+The compose ports bind to `127.0.0.1` for local development; do not expose Postgres
+or the API container publicly in production.
 
 ## Smoke-test the stack
 
@@ -126,6 +125,8 @@ job owner's identity, and write results + metrics. M3 adds bounded retries with 
 crash recovery for stalled jobs, and per-user content-based result caching with a bypass
 flag. M4 is a clean dashboard (status summary, financial totals, flagged emphasis, live
 states). See `docs/design.md` for the topology and `AGENTS.md` for how to run and test.
+The extractor uses `gpt-5.4-mini` by default and enforces the allowed non-pro
+`gpt-5.4` model family in code.
 
 ### Run the tests
 
@@ -141,6 +142,33 @@ cd backend && \
   uv run pytest tests/integration
 ```
 
+### Accuracy eval
+
+After exporting prediction JSON files for the sample PDFs, score them against the
+ground truth:
+
+```bash
+python backend/scripts/evaluate_extraction.py --predictions tmp/predictions
+```
+
+### Submission preflight
+
+Before zipping or sharing the project, run:
+
+```bash
+python scripts/preflight.py
+```
+
+This catches local-only artifacts such as `.env`, runtime PDFs, logs, build outputs,
+virtualenvs, and unfinished design/Paxel entries.
+
+To create a clean source zip from the current working tree without including ignored
+runtime files:
+
+```bash
+python scripts/create_submission.py
+```
+
 ## Tear down
 
 ```bash
@@ -152,5 +180,6 @@ docker compose down -v
 ---
 
 For milestones, evaluation criteria, the API contract, the RLS requirements, and
-deliverables, read **[ASSIGNMENT.md](ASSIGNMENT.md)**. Fill in
-**[docs/design.md](docs/design.md)** by hand and add a root **`AGENTS.md`**.
+deliverables, read **[ASSIGNMENT.md](ASSIGNMENT.md)**. The implemented design is
+summarized in **[docs/design.md](docs/design.md)**, and operational guidance lives in
+**[AGENTS.md](AGENTS.md)**.

@@ -32,6 +32,7 @@ one claim group, or one pharmacy fill range.
 
 | Field | Description |
 |---|---|
+| **Invoice Number** | Invoice, statement, bill, claim, or account identifier that groups records inside the PDF. If a single PDF contains multiple invoices, preserve the exact visible identifier on each row so records can be saved and reviewed invoice-wise. Leave blank/null when no invoice-like identifier is shown; do not use RX/NDC/item codes as invoice numbers. |
 | **Treatment Date** | Date or date range of the service or prescription fill. Use the treatment/service date, not the payment or processing date. For pharmacy records summarized over a range of fills, use the full date range (e.g., `10/10/2025 – 01/26/2026`). |
 | **CPT Code** | Procedure code(s) for medical records. A single episode may carry multiple CPT codes — list all of them. For pharmacy records, leave blank. Do not substitute NDC codes, Rx numbers, or transaction codes for CPT codes. |
 | **Description** | Brief description of the procedure, service, or medication category. Can be inferred from a summary page or general breakdown if CPT codes are absent. |
@@ -66,6 +67,15 @@ Key differences from medical billing:
 - May involve PBMs (Pharmacy Benefit Managers) such as Caremark, OptumRx, Medco — treat as third party.
 - Date of service = fill date (date the prescription was dispensed).
 - When a summary page is present, use it. Do not re-aggregate itemized rows.
+
+### 3.3 Scanned Pages and Embedded Screenshots
+
+Some billing packets contain image-only scans or screenshots from billing and
+pharmacy systems. Treat the visible page image as the source document: extract the
+same billing episodes, invoice numbers, totals, payer names, and page references
+you would extract from text. If a value is visually present but unreadable, flag
+that field instead of guessing. If a screenshot is only software chrome or a
+non-billing page, ignore it.
 
 ---
 

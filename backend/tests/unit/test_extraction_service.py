@@ -11,6 +11,8 @@ import pytest
 
 import app.service.extraction_service as svc_mod
 from app.ai.orchestrator import OrchestratorResult
+from app.ai.pdf_loader import VisionExtractionRequired
+from app.models.extraction import BillingRecord, ExtractionOutput
 from app.service.extraction_service import ExtractionService
 
 
@@ -128,3 +130,60 @@ def test_delete_pdf_tolerates_missing_file(tmp_path):
     svc.delete_pdf_after = True
     # Must not raise even though the file isn't there.
     svc._delete_pdf("j7", str(tmp_path / "gone.pdf"))
+
+
+@pytest.mark.asyncio
+async def test_process_job_routes_vision_required_pdf_to_pdf_fallback(monkeypatch):
+    svc = _service()
+    svc.delete_pdf_after = False
+    updates = []
+
+    class FakeJobDAO:
+        async def get(self, job_id):
+            return {"id": job_id, "pdf_path": "/pdfs/scan.pdf"}
+
+        async def update_status(self, job_id, status, **kwargs):
+            updates.append({"job_id": job_id, "status": status, **kwargs})
+            return {"id": job_id, "status": status}
+
+    def needs_vision(path, doc_id, max_pages=None):
+        raise VisionExtractionRequired(
+            "PDF has no extractable text; OpenAI PDF vision fallback required",
+            pages=[1],
+        )
+
+    class FakeVisionExtractor:
+        calls = []
+
+        async def run(self, *, pdf_path, job_id):
+            self.calls.append({"pdf_path": pdf_path, "job_id": job_id})
+            return OrchestratorResult(
+                extraction=ExtractionOutput(
+                    records=[
+                        BillingRecord(
+                            invoice_number="INV-200",
+                            treatment_date="02/01/2024",
+                            cpt_codes=[],
+                            provider="Scanned Clinic",
+                            total_charges=200.0,
+                            page="1",
+                        )
+                    ]
+                ),
+                model="gpt-5.4-mini",
+                token_usage={"input": 20, "output": 10, "total": 30},
+                cost_usd=0.0002,
+            )
+
+    svc.job_dao = FakeJobDAO()
+    monkeypatch.setattr(svc_mod, "load_document", needs_vision)
+    monkeypatch.setattr(svc_mod, "PdfVisionExtractor", FakeVisionExtractor)
+
+    await svc.process_job("job-scan", expected_attempts=1)
+
+    assert FakeVisionExtractor.calls == [
+        {"pdf_path": "/pdfs/scan.pdf", "job_id": "job-scan"}
+    ]
+    assert updates[0]["status"] == "completed"
+    assert updates[0]["result"]["records"][0]["invoice_number"] == "INV-200"
+    assert updates[0]["token_usage"]["total"] == 30

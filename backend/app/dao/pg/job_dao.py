@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select, text, update
+from sqlalchemy import select, text, tuple_, update
 
 from app.core.common.time import utc_now
 from app.core.context_manager import ContextManager
@@ -179,17 +180,33 @@ class JobDAO(BasePgDAO[Job]):
         *,
         limit: int | None = None,
         offset: int = 0,
+        before: tuple[datetime, str] | None = None,
     ) -> list[dict]:
         """Return the caller's jobs, newest first, optionally filtered/paged.
 
-        ``limit``/``offset`` bound the result set so a user with a large history
-        can't force an unbounded response. RLS still scopes the rows to the caller.
+        Ordering is total — ``(created_at, id)`` descending — so the id breaks
+        ties between rows created in the same instant and pagination is stable.
+
+        Two paging modes:
+
+        - ``before`` is a keyset cursor ``(created_at, id)``: returns only rows
+          strictly older than it. This is the preferred mode — it is immune to
+          rows being inserted at the head between pages (no skipped/duplicated
+          rows) and never pays the deep-``OFFSET`` scan cost.
+        - ``offset`` is the classic skip count, kept for simple callers.
+
+        ``before`` takes precedence over ``offset`` when both are given. RLS still
+        scopes the rows to the caller either way.
         """
         async with self.context_manager.session() as session:
-            query = select(Job).order_by(Job.created_at.desc())
+            query = select(Job).order_by(Job.created_at.desc(), Job.id.desc())
             if status is not None:
                 query = self._apply_filters(query, {"status": status})
-            if offset:
+            if before is not None:
+                query = query.where(
+                    tuple_(Job.created_at, Job.id) < tuple_(before[0], before[1])
+                )
+            elif offset:
                 query = query.offset(offset)
             if limit is not None:
                 query = query.limit(limit)
@@ -199,6 +216,86 @@ class JobDAO(BasePgDAO[Job]):
     async def get_active(self) -> list[dict]:
         """Return the caller's jobs currently in processing status."""
         return await self.list(status=ACTIVE_STATUS)
+
+    async def summary(self) -> dict:
+        """Aggregate the caller's jobs server-side (RLS-scoped).
+
+        Returns status counts plus record/flag counts and financial totals,
+        computed in SQL over EVERY job the caller owns — so the dashboard's
+        headline numbers stay correct no matter how many documents exist, instead
+        of being summed client-side over a truncated page.
+        """
+        async with self.context_manager.session() as session:
+            counts = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT
+                          count(*) AS total,
+                          count(*) FILTER (WHERE status='completed')  AS completed,
+                          count(*) FILTER (WHERE status='processing') AS processing,
+                          count(*) FILTER (WHERE status='pending')    AS pending,
+                          count(*) FILTER (WHERE status='failed')     AS failed,
+                          count(*) FILTER (WHERE status='cancelled')  AS cancelled,
+                          COALESCE(SUM(jsonb_array_length(result->'records'))
+                              FILTER (WHERE jsonb_typeof(result->'records')='array'), 0) AS records_count,
+                          COALESCE(SUM(jsonb_array_length(result->'flagged'))
+                              FILTER (WHERE jsonb_typeof(result->'flagged')='array'), 0) AS flagged_count
+                        FROM jobs
+                        """
+                    )
+                )
+            ).mappings().one()
+
+            fin = (
+                await session.execute(
+                    text(
+                        r"""
+                        SELECT
+                          COALESCE(SUM(v.total_charges), 0) AS total_charges,
+                          COALESCE(SUM(v.ins_paid),      0) AS ins_paid,
+                          COALESCE(SUM(v.adjustment),    0) AS adjustment,
+                          COALESCE(SUM(v.payments),      0) AS payments,
+                          COALESCE(SUM(v.balance),       0) AS balance
+                        FROM (
+                          SELECT result FROM jobs
+                          WHERE status='completed'
+                            AND jsonb_typeof(result->'records')='array'
+                        ) j
+                        CROSS JOIN LATERAL jsonb_array_elements(j.result->'records') AS rec
+                        CROSS JOIN LATERAL (
+                          SELECT
+                            CASE WHEN rec->>'total_charges' ~ '^\s*-?[0-9]+(\.[0-9]+)?\s*$'
+                                 THEN (rec->>'total_charges')::numeric END AS total_charges,
+                            CASE WHEN rec->>'ins_paid' ~ '^\s*-?[0-9]+(\.[0-9]+)?\s*$'
+                                 THEN (rec->>'ins_paid')::numeric END AS ins_paid,
+                            CASE WHEN rec->>'adjustment' ~ '^\s*-?[0-9]+(\.[0-9]+)?\s*$'
+                                 THEN (rec->>'adjustment')::numeric END AS adjustment,
+                            CASE WHEN rec->>'payments' ~ '^\s*-?[0-9]+(\.[0-9]+)?\s*$'
+                                 THEN (rec->>'payments')::numeric END AS payments,
+                            CASE WHEN rec->>'balance' ~ '^\s*-?[0-9]+(\.[0-9]+)?\s*$'
+                                 THEN (rec->>'balance')::numeric END AS balance
+                        ) v
+                        """
+                    )
+                )
+            ).mappings().one()
+
+        return {
+            "total": int(counts["total"]),
+            "completed": int(counts["completed"]),
+            "processing": int(counts["processing"]),
+            "pending": int(counts["pending"]),
+            "failed": int(counts["failed"]),
+            "cancelled": int(counts["cancelled"]),
+            "records_count": int(counts["records_count"]),
+            "flagged_count": int(counts["flagged_count"]),
+            "total_charges": float(fin["total_charges"]),
+            "ins_paid": float(fin["ins_paid"]),
+            "adjustment": float(fin["adjustment"]),
+            "payments": float(fin["payments"]),
+            "balance": float(fin["balance"]),
+        }
 
     # ----------------------------------------------------- worker queue (M2/M3)
 

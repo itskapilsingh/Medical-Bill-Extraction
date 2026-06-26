@@ -32,5 +32,11 @@ out/
 backend/pdfs/*
 !backend/pdfs/.gitkeep
 
+# Local/runtime output that may be derived from PHI (eval predictions, test
+# runner artifacts) — must never be tracked or swept into a submission.
+tmp/
+test-results/
+predictions/
+
 # Packaged exports
 *.zip

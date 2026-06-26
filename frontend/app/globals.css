@@ -1,33 +1,11 @@
 @import "tailwindcss";
 
-/*
- * Cohere's brand typeface (CohereVariable / CohereMono) is proprietary, so we do
- * NOT bundle the files. Instead we reference them from Cohere's own public CDN
- * via @font-face — the browser loads them directly from Cohere, nothing
- * proprietary is redistributed in this repo. If the CDN blocks cross-origin
- * loading (CORS) or is unavailable, it falls back to IBM Plex Mono (the bundled,
- * OFL-licensed look-alike). For real/commercial use, drop these @font-face rules
- * and rely on the IBM Plex Mono fallback.
- */
-@font-face {
-  font-family: "CohereVariable";
-  src: url("https://fonts.cohere.com/CohereVariable.woff2") format("woff2"),
-    url("https://fonts.cohere.com/CohereVariable.woff") format("woff");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "CohereMono";
-  src: url("https://fonts.cohere.com/CohereMono-Regular.woff2") format("woff2"),
-    url("https://fonts.cohere.com/CohereMono-Regular.woff") format("woff");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
 :root {
   color-scheme: light;
+  /* Soft, layered elevation — reads more premium than a single flat shadow. */
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.05);
+  --shadow-raised: 0 2px 4px rgb(15 23 42 / 0.04), 0 8px 20px rgb(15 23 42 / 0.08);
+  --shadow-pop: 0 10px 30px rgb(15 23 42 / 0.12);
 }
 
 html {
@@ -35,11 +13,12 @@ html {
 }
 
 /* Visible keyboard focus for every interactive element. Uses :focus-visible so
- * it shows for keyboard/AT users without ringing on mouse clicks. */
+ * it shows for keyboard/AT users without ringing on mouse clicks. The outline
+ * follows each element's own border-radius, so we don't set one here (doing so
+ * would square off rounded buttons/cards/inputs on focus). */
 :focus-visible {
   outline: 2px solid #0f766e; /* teal-700 */
   outline-offset: 2px;
-  border-radius: 0.25rem;
 }
 
 /* Respect users who ask for less motion: drop the spinner, shimmer, smooth
@@ -58,37 +37,66 @@ html {
 }
 
 body {
-  font-family: "CohereVariable", var(--font-brand), ui-monospace, "SF Mono",
-    "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-brand), ui-monospace, "SF Mono", "Cascadia Mono",
+    "Segoe UI Mono", Menlo, Consolas, monospace;
   background-color: #f8fafc; /* slate-50 */
   color: #0f172a; /* slate-900 */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 ::selection {
   background: #ccfbf1; /* teal-100 */
 }
 
-/* Shared text input styling used on the auth screens. */
-.input-base {
-  width: 100%;
-  border-radius: 0.625rem;
-  border: 1px solid #cbd5e1; /* slate-300 */
-  background: #ffffff;
-  padding: 0.625rem 0.75rem;
-  font-size: 0.875rem;
-  color: #0f172a;
-  outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.input-base::placeholder {
-  color: #94a3b8; /* slate-400 */
-}
-.input-base:focus {
-  border-color: #14b8a6; /* teal-500 */
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18);
+/* Shared form-control styling — ONE look for every text input, date input, and
+ * <select> across the auth, dashboard, and report screens. 40px tall, slate-300
+ * border, teal focus ring. Selects strip the OS chrome and draw a custom chevron
+ * so they line up pixel-for-pixel with the inputs. In @layer components so plain
+ * utilities (e.g. `pr-10` on the password field) still override as expected. */
+@layer components {
+  .input-base,
+  .select-base {
+    height: 2.5rem; /* h-10 — inputs and selects share one height */
+    width: 100%;
+    border-radius: 0.5rem; /* rounded-lg */
+    border: 1px solid #cbd5e1; /* slate-300 */
+    background-color: #ffffff;
+    padding: 0 0.75rem;
+    font-size: 0.875rem;
+    color: #0f172a;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .input-base::placeholder {
+    color: #94a3b8; /* slate-400 */
+  }
+  .input-base:focus,
+  .select-base:focus {
+    border-color: #14b8a6; /* teal-500 */
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18);
+  }
+
+  .select-base {
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    /* Room for the chevron, then a slate-500 chevron drawn as a background image. */
+    padding-right: 2rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.625rem center;
+    background-size: 1rem 1rem;
+  }
+  /* Tidy the native date input's chrome so it matches the others. */
+  .input-base[type="date"] {
+    color-scheme: light;
+  }
+  .input-base[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.55;
+  }
 }
 
 /* Thin scrollbars for dense data tables. */
@@ -102,6 +110,122 @@ body {
 }
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Toast entrance — slides up and fades in. The global prefers-reduced-motion
+ * rule above collapses the duration to ~0 for users who ask for less motion. */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.toast-enter {
+  animation: toast-in 0.18s ease-out;
+}
+
+/* ---------------------------------------------------------------------------
+ * Component primitives — one consistent button / card / badge language so every
+ * surface looks like it came from the same design system.
+ * ------------------------------------------------------------------------- */
+@layer components {
+  /* Surfaces */
+  .card {
+    border-radius: 1rem; /* rounded-2xl */
+    border: 1px solid #e2e8f0; /* slate-200 */
+    background-color: #ffffff;
+    box-shadow: var(--shadow-card);
+  }
+  /* Clickable surface — lifts on hover. */
+  .card-link {
+    border-radius: 0.75rem; /* rounded-xl */
+    border: 1px solid #e2e8f0;
+    background-color: #ffffff;
+    box-shadow: var(--shadow-card);
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  }
+  .card-link:hover {
+    border-color: #cbd5e1; /* slate-300 */
+    box-shadow: var(--shadow-raised);
+    transform: translateY(-1px);
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    white-space: nowrap;
+    height: 2.25rem; /* 36px */
+    padding: 0 0.875rem;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease,
+      color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  .btn-sm {
+    height: 2rem; /* 32px */
+    padding: 0 0.625rem;
+    font-size: 0.8125rem;
+  }
+  .btn-primary {
+    /* teal-700 (not 600): white text clears WCAG AA at 14px (5.47:1). */
+    background-color: #0f766e; /* teal-700 */
+    color: #ffffff;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgb(15 118 110 / 0.3);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: #115e59; /* teal-800 */
+  }
+  .btn-secondary {
+    background-color: #ffffff;
+    border-color: #e2e8f0; /* slate-200 */
+    color: #334155; /* slate-700 */
+    box-shadow: var(--shadow-card);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: #f8fafc;
+    border-color: #cbd5e1;
+    color: #0f172a;
+  }
+  .btn-ghost {
+    background-color: transparent;
+    color: #475569; /* slate-600 */
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background-color: #f1f5f9; /* slate-100 */
+    color: #0f172a;
+  }
+
+  /* Badge */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    padding: 0.2rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
 }
 
 /* Loading skeleton shimmer. */

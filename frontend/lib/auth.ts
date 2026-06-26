@@ -1,6 +1,13 @@
 import { betterAuth } from "better-auth";
 import { Pool } from "pg";
 
+import { resolveAuthEnv } from "@/lib/auth-config";
+
+// All env reading + production guardrails live in resolveAuthEnv (pure + unit
+// tested); this module only wires the resolved values into the pool + betterAuth.
+const { databaseUrl, secret: authSecret, baseURL: authBaseURL, trustedOrigins } =
+  resolveAuthEnv(process.env);
+
 // A single shared pool per process. Cached on globalThis so Next's dev HMR does
 // not open a new pool on every reload.
 const globalForPool = globalThis as unknown as { __authPool?: Pool };
@@ -8,7 +15,7 @@ const globalForPool = globalThis as unknown as { __authPool?: Pool };
 const pool =
   globalForPool.__authPool ??
   new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: databaseUrl,
     max: 5,
   });
 
@@ -16,20 +23,18 @@ if (process.env.NODE_ENV !== "production") {
   globalForPool.__authPool = pool;
 }
 
-const trustedOrigins = (process.env.TRUSTED_ORIGINS ?? "http://localhost:3000")
-  .split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
-
 /**
  * Better Auth owns session creation and validation. It writes the user/session/
- * account/verification tables (created by Alembic) over the admin DATABASE_URL.
+ * account/verification tables (created by Alembic) over AUTH_DATABASE_URL, an
+ * auth-only DB role with no privileges on tenant business tables.
  * The FastAPI API reads the same `session` table to validate tokens it is
  * handed — the "shared session table" topology.
  *
  * BETTER_AUTH_SECRET and BETTER_AUTH_URL are read from the environment.
  */
 export const auth = betterAuth({
+  secret: authSecret,
+  baseURL: authBaseURL,
   database: pool,
   emailAndPassword: {
     enabled: true,

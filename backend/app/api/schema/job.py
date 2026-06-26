@@ -25,6 +25,24 @@ class TokenUsage(BaseModel):
     total: int = 0
 
 
+class JobsSummary(BaseModel):
+    """Server-computed aggregate of the caller's jobs (correct at any scale)."""
+
+    total: int = 0
+    completed: int = 0
+    processing: int = 0
+    pending: int = 0
+    failed: int = 0
+    cancelled: int = 0
+    records_count: int = 0
+    flagged_count: int = 0
+    total_charges: float = 0.0
+    ins_paid: float = 0.0
+    adjustment: float = 0.0
+    payments: float = 0.0
+    balance: float = 0.0
+
+
 class JobResponse(BaseModel):
     """One job as returned by the API."""
 

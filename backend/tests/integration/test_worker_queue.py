@@ -77,6 +77,7 @@ async def test_process_job_writes_result_and_metrics(
         extraction=ExtractionOutput(
             records=[
                 BillingRecord(
+                    invoice_number="INV-100",
                     treatment_date="01/04/2024",
                     cpt_codes=["99213"],
                     provider="Test Clinic",
@@ -117,6 +118,7 @@ async def test_process_job_writes_result_and_metrics(
             )
         ).first()
     assert row.status == "completed"
+    assert row.result["records"][0]["invoice_number"] == "INV-100"
     assert row.result["records"][0]["provider"] == "Test Clinic"
     assert row.token_usage["total"] == 15
     assert row.cost_usd == 0.0001
@@ -157,3 +159,71 @@ async def test_process_job_failure_marks_failed_and_never_raises(
 
     async with admin_engine.begin() as conn:
         await conn.execute(text("DELETE FROM jobs WHERE id = :id"), {"id": job_id})
+
+
+async def test_process_job_reuses_cached_result_for_identical_content(
+    context_manager, admin_engine, two_users, monkeypatch
+):
+    """Idempotency / cost guard: when an identical document (same content hash) is
+    already completed for this user, process_job reuses that result and never calls
+    the model again — so crash recovery / retries can't double-charge."""
+    import json
+
+    from app.service.extraction_service import ExtractionService
+    import app.service.extraction_service as svc_module
+
+    alice, _ = two_users
+    content_hash = f"hash-{uuid.uuid4().hex}"
+    cached_result = {
+        "records": [{"provider": "Cached Clinic", "total_charges": 42.0}],
+        "flagged": [],
+    }
+    done_id = f"job-{uuid.uuid4().hex}"
+    new_id = f"job-{uuid.uuid4().hex}"
+
+    async with admin_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO jobs (id, owner_id, pdf_filename, pdf_path, status, "
+                "content_hash, result, token_usage, cost_usd) VALUES "
+                "(:id,:o,'a.pdf','/p/a.pdf','completed',:h,CAST(:r AS jsonb),"
+                "CAST(:t AS jsonb),0.01)"
+            ),
+            {
+                "id": done_id, "o": alice, "h": content_hash,
+                "r": json.dumps(cached_result),
+                "t": json.dumps({"input": 1, "output": 1, "total": 2}),
+            },
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO jobs (id, owner_id, pdf_filename, pdf_path, status, "
+                "content_hash, started_at) VALUES "
+                "(:id,:o,'b.pdf','/p/b.pdf','processing',:h, now())"
+            ),
+            {"id": new_id, "o": alice, "h": content_hash},
+        )
+
+    # If extraction were attempted, parsing would raise and fail the job.
+    def _must_not_run(*args, **kwargs):
+        raise RuntimeError("extraction must NOT run on a content-hash cache hit")
+
+    monkeypatch.setattr(svc_module, "load_document", _must_not_run)
+
+    service = ExtractionService(context_manager)
+    with acting_as(alice):
+        await service.process_job(new_id, expected_attempts=0)
+
+    async with admin_engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT status, result FROM jobs WHERE id = :id"), {"id": new_id}
+            )
+        ).first()
+    assert row.status == "completed"
+    assert row.result["records"][0]["provider"] == "Cached Clinic"
+
+    async with admin_engine.begin() as conn:
+        await conn.execute(
+            text("DELETE FROM jobs WHERE id = ANY(:ids)"), {"ids": [done_id, new_id]}
+        )

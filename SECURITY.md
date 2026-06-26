@@ -30,6 +30,9 @@ infrastructure controls the code cannot grant itself.
 - The browser only ever talks to a same-origin **BFF proxy**; the session token is
   re-validated by the API against the shared session table. Neither service blindly
   trusts the other.
+- Better Auth writes through a dedicated `billing_auth` database role
+  (`AUTH_DATABASE_URL`) that has DML only on the auth tables. It is not the schema
+  owner and has no `jobs` privileges, so the web tier is not a bypass around RLS.
 
 ### Authentication
 - Better Auth with server-enforced password minimum length, bounded session
@@ -46,8 +49,20 @@ infrastructure controls the code cannot grant itself.
   otherwise the real TCP peer is used. So a client can't rotate the header to dodge
   the limit, with or without a proxy in front. The limiter's state map is swept each
   window so idle keys can't accumulate without bound.
+- Per-**user** rate limiting on `POST /jobs`, keyed on the authenticated user id
+  (`RATE_LIMIT_USER_UPLOAD_MAX_REQUESTS`). Each accepted upload triggers a paid LLM
+  extraction against a small worker pool, so this is the real guard against
+  unbounded consumption (OWASP API4:2023 / LLM10, CWE-770): a single account can't
+  drive runaway extraction spend or starve other tenants' jobs by bursting uploads,
+  and — unlike the per-IP layer — the budget follows the account across IP rotation
+  and shared NAT. Over-budget requests get `429` with `Retry-After` *before* any PDF
+  is persisted or any extraction is queued. The per-IP and per-user layers share one
+  in-process sliding-window primitive.
 - Upload size cap enforced by **streaming** the body (the request is rejected
   before it is fully buffered in memory), at both the BFF and the API.
+- Duplicate uploads are fingerprinted before durable storage when possible. Cache
+  hits and in-flight duplicates do not persist a second raw PDF, and race-created
+  duplicate files are deleted immediately.
 - PDF page-count cap, a wall-clock timeout on PDF parsing, and a timeout on the
   model call — a hostile or huge document cannot pin a worker. Parsing runs off
   the event loop so one bad file cannot stall the worker's other duties.
@@ -92,7 +107,8 @@ real patient data until they are in place.
 4. **Secrets management.** Generate a unique `BETTER_AUTH_SECRET`
    (`openssl rand -hex 32`) and strong, unique database passwords; inject them from
    a secrets manager, not from a committed `.env`. The defaults in `.env.example`
-   are for local development only.
+   are for local development only. Use separate admin, API (`billing_app`), and
+   auth (`billing_auth`) database credentials.
 5. **Distributed rate limiting.** The in-process limiter protects a single replica.
    Behind a load balancer with multiple API replicas, move it to a shared store
    (e.g. Redis) or enforce limits at the ingress.
@@ -104,3 +120,19 @@ real patient data until they are in place.
 This is a take-home project, not a production service. For a real deployment,
 route security reports to a monitored channel and document the response process
 here.
+
+## Submission preflight
+
+Before packaging or sharing the repository, run:
+
+```bash
+python scripts/preflight.py
+```
+
+The check fails if local-only artifacts are present, including `.env`, runtime
+PDFs, local logs, build outputs, virtualenvs, or an unfinished design/Paxel entry.
+Package from git (`git archive`) or a clean checkout rather than zipping the
+working directory.
+
+For convenience, `python scripts/create_submission.py` creates a source zip from
+tracked and safe untracked files while excluding ignored runtime artifacts.

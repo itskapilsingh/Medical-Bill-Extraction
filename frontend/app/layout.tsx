@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import { IBM_Plex_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 
+import { ToastProvider } from "@/components/toast";
+
 // IBM Plex Mono — an OFL-licensed, warm, typewriter-inspired monospace. Used as
 // a freely-licensed stand-in for Cohere's proprietary faux-mono brand typeface.
 const brandFont = IBM_Plex_Mono({
@@ -20,7 +22,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={brandFont.variable}>
-      <body>{children}</body>
+      <body>
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

@@ -7,8 +7,8 @@ isolation is enforced by the database's RLS, not the UI.
 ## How it fits together
 
 - **Auth** (`lib/auth.ts`, `app/api/auth/[...all]`): Better Auth owns sessions and writes the
-  `user`/`session`/`account`/`verification` tables over the admin `DATABASE_URL`. The session
-  cookie is httpOnly and stays on this origin.
+  `user`/`session`/`account`/`verification` tables over `AUTH_DATABASE_URL`, a dedicated
+  auth-table-only database role. The session cookie is httpOnly and stays on this origin.
 - **BFF proxy** (`app/api/backend/[...path]`): the browser only ever calls this same-origin
   route. It validates the Better Auth session, then forwards the request to the FastAPI API
   with the raw session token as `Authorization: Bearer …`. This sidesteps the SameSite=Lax
@@ -27,9 +27,9 @@ npm install
 npm run dev      # or: npm run build && npm start
 ```
 
-Env (from the repo-root `.env`): `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
-`API_INTERNAL_URL` (point at `http://localhost:8000` when running outside Docker),
-`TRUSTED_ORIGINS`.
+Env (from the repo-root `.env`): `AUTH_DATABASE_URL`, `BETTER_AUTH_SECRET`,
+`BETTER_AUTH_URL`, `API_INTERNAL_URL` (point at `http://localhost:8000` when running
+outside Docker), `TRUSTED_ORIGINS`.
 
 ## Stack notes
 

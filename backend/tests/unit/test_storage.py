@@ -60,3 +60,23 @@ def test_blank_owner_id_falls_back(tmp_path):
     storage = PdfStorage(str(tmp_path))
     path, _ = storage.save(owner_id="", data=b"%PDF-1.4 y")
     assert "unknown" in Path(path).parts
+
+
+def test_delete_removes_pdf_under_mount(tmp_path):
+    storage = PdfStorage(str(tmp_path))
+    path, _ = storage.save(owner_id="user-1", data=b"%PDF-1.4 z")
+
+    assert Path(path).exists()
+    assert storage.delete(path) is True
+    assert not Path(path).exists()
+    assert storage.delete(path) is False
+
+
+def test_delete_rejects_path_outside_mount(tmp_path):
+    storage = PdfStorage(str(tmp_path / "pdfs"))
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"%PDF-1.4 x")
+
+    with pytest.raises(InvalidPdfError, match="outside the storage root"):
+        storage.delete(str(outside))
+    assert outside.exists()
